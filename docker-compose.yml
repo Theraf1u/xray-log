@@ -1,0 +1,139 @@
+name: log-analyzer
+
+services:
+  # Main analyzer server with Web UI
+  analyzer-server:
+    # Local build (faster, uses local .env for MAPBOX_TOKEN)
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN:-}
+    container_name: xray-log-analyzer
+    restart: unless-stopped
+    ports:
+      # API port (for agents WebSocket)
+      - "8237:8237"
+      # Web UI port (for Caddy)
+      - "3925:3925"
+    volumes:
+      - analyzer-data:/app/data
+      - ./server/blacklist.txt:/app/blacklist.txt:ro
+    environment:
+      - LISTEN_ADDR=:8237
+      - DB_PATH=/app/data/analyzer.db
+      - BLACKLIST_PATH=/app/blacklist.txt
+      - BLACKLIST_RELOAD=5m
+      - BLACKLIST_REMOTE_URL=https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
+      - TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-false}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - SUSPICIOUS_REQUEST_COUNT=${SUSPICIOUS_REQUEST_COUNT:-5}
+      - SUSPICIOUS_TIME_WINDOW=${SUSPICIOUS_TIME_WINDOW:-1h}
+      - REMNAWAVE_ENABLED=${REMNAWAVE_ENABLED:-false}
+      - REMNAWAVE_URL=${REMNAWAVE_URL:-}
+      - REMNAWAVE_API_TOKEN=${REMNAWAVE_API_TOKEN:-}
+      - REMNAWAVE_SYNC_INTERVAL=${REMNAWAVE_SYNC_INTERVAL:-5m}
+      - ALERIA_API_KEY=${ALERIA_API_KEY:-}
+      - API_TOKEN=${API_TOKEN:-}
+      - AGENT_TOKEN=${AGENT_TOKEN:-}
+      - REDIS_ADDR=analyzer-redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
+      - POSTGRES_URL=postgres://xray_analyzer:${POSTGRES_PASSWORD:-changeme_in_env}@analyzer-postgres:5432/xray_analyzer?sslmode=disable
+    depends_on:
+      analyzer-redis:
+        condition: service_started
+      analyzer-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8237/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+      - remnawave-network
+
+  # Persistent L2 cache for analyzer (id→username resolve, API warmup, etc.)
+  # 512 MB AOF-free LRU is enough for us; bump maxmemory if eviction shows
+  # up in redis-cli INFO stats.
+  analyzer-redis:
+    image: redis:7-alpine
+    container_name: analyzer-redis
+    restart: unless-stopped
+    command: >-
+      redis-server
+      --appendonly no
+      --save ""
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - analyzer-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+
+  analyzer-postgres:
+    image: postgres:17-alpine
+    container_name: analyzer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: xray_analyzer
+      POSTGRES_USER: xray_analyzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
+    volumes:
+      - analyzer-postgres-data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=2GB
+      -c work_mem=16MB
+      -c maintenance_work_mem=512MB
+      -c effective_cache_size=6GB
+      -c random_page_cost=1.1
+      -c max_wal_size=4GB
+      -c checkpoint_timeout=15min
+      -c checkpoint_completion_target=0.9
+      -c autovacuum_vacuum_scale_factor=0.05
+      -c autovacuum_naptime=30s
+      -c max_connections=100
+      -c shared_preload_libraries=pg_stat_statements
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "xray_analyzer"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+    networks:
+      - analyzer-net
+
+volumes:
+  analyzer-data:
+  analyzer-redis-data:
+  analyzer-postgres-data:
+
+networks:
+  analyzer-net:
+    driver: bridge
+  remnawave-network:
+    external: true
