@@ -1,440 +1,308 @@
+<div align="center">
+
 # Xray Log Analyzer
 
-**Языки:** **Русский** · [English](./README.en.md)
+**Real-time аналитика access-логов Xray с интеграцией Remnawave**
 
-Real-time analytics для Xray-core access logs c интеграцией с Remnawave panel. Собирает access logs со всех VPN-нод через WebSocket-агентов, агрегирует в Postgres, детектит abuse/threat-traffic, рисует дашборд.
+Собирает access-логи со всех VPN-нод через лёгких агентов, агрегирует в Postgres с daily-партиционированием, детектит abuse/threat-трафик по 1.5M+ индикаторам, синхронизирует пользователей с панелью Remnawave и показывает всё это в дашборде на Next.js в стиле Liquid Glass.
 
-> 📦 **Установка по шагам:** [INSTALL.md](./INSTALL.md) — production-ready гайд для server + agents + reverse-proxy.
+[Возможности](#-возможности) · [Скриншоты](#-скриншоты) · [Архитектура](#-архитектура) · [Быстрая установка](#-быстрая-установка) · [Конфигурация](#-конфигурация) · [FAQ](#-faq-и-troubleshooting)
 
-## Содержание
+</div>
 
-- [Возможности](#возможности)
-- [Скриншоты](#скриншоты)
-- [Архитектура](#архитектура)
-- [Tech stack](#tech-stack)
-- [Quick install — server](#quick-install--server)
-- [Quick install — agent](#quick-install--agent-на-каждой-xray-ноде)
-- [Configuration reference](#configuration-reference)
-- [Operations](#operations)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
+---
 
-## Возможности
+## Зачем это нужно
 
-- **Real-time ingest** — агенты на каждой ноде читают access.log через `inotify` и стримят батчи (gzip, WebSocket) на сервер
-- **Postgres storage** с partitioning по дням для hot tables (`bridged_flows`, `alerts`, `threat_matches`...). Daily DROP PARTITION → ноль bloat
-- **Threat intel** — 1.5M+ indicators (ads, malware, casino, social, tor, blocklist-fraud), алерты при превышении порогов
-- **Bridge correlation** — time-based fan-out для bridge-фронтированных exit-нод (RU bridge → German exit), резолвит синтетические email-IDs обратно к настоящим Remnawave UUID через `remna_users` lookup
-- **Remnawave sync** — каждые 1-5 мин подтягивает users / nodes / hwid devices / online stats из panel API, держит дашборд в sync с panel
-- **Web UI** на Next.js (RU + EN, dark theme, language switcher) — dashboard, threat intel breakdown, per-user details, abuse analytics, geo map
-- **Telegram alerts** — threat alerts с категориями + контекстом
-- **AI assistant** — встроенный chat для запросов вроде "найди abusers за последний час"
+Если у вас несколько VPN-нод под Remnawave (Xray-core), стандартная картина такая: логи разбросаны по серверам, узнать «кто и куда ходит» можно только руками через `grep` по каждой ноде, а Remnawave-панель показывает *кто подключён*, но не *что происходит в трафике*.
 
-## Скриншоты
+Этот проект закрывает разрыв между «панель управления подписками» и «что реально происходит на нодах»:
 
-> Все usernames / UUID / IP на скриншотах замаскированы (demo-данные). Реальный интерфейс выглядит точно так же.
+- Логи стекаются в одно место в реальном времени — не нужно заходить на 20 серверов
+- Каждый запрос сверяется с базой threat-индикаторов (малварь, фишинг, ботнеты, трекеры, пиратство, казино и т.д.) — вы видите, кто из пользователей делает что-то подозрительное, а не только «сколько трафика съел»
+- Bridge-топологии (RU-нода → фронтирует → EU-exit) корректно разрешаются обратно к реальному пользователю, а не теряются на промежуточном хопе
+- Пользователи Remnawave синхронизируются автоматически — вместо синтетических ID в интерфейсе видны настоящие юзернеймы, HWID-устройства, статус подписки
+- Алерты летят в Telegram с троттлингом скорости отправки (Telegram банит за флуд — это учтено)
+- Всё это доступно из веб-интерфейса на русском, без необходимости лезть в SQL или логи вручную
+
+---
+
+## 📸 Скриншоты
+
+> Все usernames / UUID / IP на скриншотах замаскированы — это demo-данные, не продовые. Скриншоты сняты до перехода интерфейса на текущий стиль Liquid Glass (стеклянные поверхности, единая цветовая логика, компактные плитки показателей) — структура функций та же, визуальный слой с тех пор заметно чище.
 
 ### Дашборд
-
-Live-метрики, статус системы, аномалии, гео-карта, real-time feed, активные ноды, blacklist-алерты.
+Живые метрики, статус подсистем (WebSocket / Remnawave / Threat Intel / БД), аномалии, гео-карта подключений, лента событий в реальном времени, активные ноды, алерты блоклиста.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
 ### Threat Intelligence
-
-1.5M+ indicators (ads, malware, casino, tor, blocklist-fraud), категории, алерты, recent matches, top countries.
+1.5M+ индикаторов (реклама, малварь, казино, Tor, фишинг, пиратство и др.), разбивка по категориям, недавние совпадения, топ стран, риск-профили пользователей, конструктор отчётов.
 
 ![Threat Intelligence](docs/screenshots/threatintel.png)
 
 ### Пользователи
-
-Все пользователи со всех нод с risk-score, поиском по email/IP, фильтрами, экспортом.
+Все пользователи со всех нод с расчётным risk-score, поиском по email/IP, фильтрами по риску и ноде, детальная карточка на каждого — угрозы, посещённые домены, блоклист-совпадения, алерты, история IP.
 
 ![Users](docs/screenshots/users.png)
 
 ### Remnawave
-
-Расширенная аналитика на основе Remnawave API: онлайн сейчас / 15 мин / 1ч / 24ч, HWID-устройства, платформы.
+Расширенная аналитика поверх Remnawave API: онлайн сейчас / 15 мин / 1ч / 24ч, HWID-устройства, разбивка по платформам, трафик, статусы подписок.
 
 ![Remnawave](docs/screenshots/remnawave.png)
 
 ### Ноды
-
-Управление и мониторинг VPN-нод: статус подключения, запросы, blacklist hits, онлайн пользователи.
+Мониторинг всех VPN-нод: статус подключения, запросы, блоклист-хиты, онлайн-пользователи. Мастер добавления новой ноды генерирует готовую команду установки агента.
 
 ![Nodes](docs/screenshots/nodes.png)
 
 ### Чёрный список
-
-Детальная аналитика блокировок: топ доменов, топ пользователей, временной график, поиск.
+Детальная аналитика блокировок: топ доменов, топ пользователей, почасовой график, поиск и фильтры.
 
 ![Blacklist](docs/screenshots/blacklist.png)
 
-## Архитектура
+---
+
+## ✨ Возможности
+
+### Сбор данных
+
+| Функция | Описание |
+|---|---|
+| **Real-time ingest** | Лёгкий агент на каждой ноде читает `access.log` через `inotify` (не polling — реагирует мгновенно на новые строки), батчит по 1000 записей / 5 секунд, сжимает gzip и стримит на сервер по WebSocket |
+| **Postgres с daily-партиционированием** | Горячие таблицы (`request_events`, `bridged_flows`, `alerts`, `threat_matches`, `blacklist_matches`, `anomalies`) партиционируются по дням. Истёкшие партиции дропаются целиком — ноль VACUUM-мусора, в отличие от `DELETE WHERE` |
+| **Bridge-корреляция** | Если у вас топология RU-bridge → EU-exit, синтетические email-ID с exit-ноды резолвятся обратно к настоящему пользователю через time-based fan-out против `user_ip_history` на bridge-ноде. Окно сопоставления настраивается (по умолчанию ±15с — NTP-синхронизированные ноды дают sub-second дрифт) |
+| **Хронология запросов** | Отдельная неагрегированная таблица `request_events` с посекундной точностью — можно выгрузить полную историю конкретного пользователя за любой период в CSV или XLSX |
+
+### Threat Intelligence
+
+| Функция | Описание |
+|---|---|
+| **1.5M+ индикаторов** | Фиды: URLhaus, ThreatFox, Feodo Tracker, SSL Blacklist, StevenBlack, Tor exit-ноды, торрент-трекеры, и набор категорий от BlockList Project (реклама, крипто-майнинг, наркотики, мошенничество, малварь, фишинг, пиратство, редиректы, скам, TikTok, трекинг) |
+| **Категории с уверенностью** | Каждое совпадение приходит с confidence-score; в интерфейсе — топ-10 пользователей на категорию с раскрытием полного списка через постраничную подгрузку |
+| **Риск-профили** | Автоматический расчёт risk-score на основе частоты попаданий в блоклист, разнообразия угроз, свежести активности |
+| **Аномалии** | Детект всплесков активности, ночной активности, новых пользователей с высоким объёмом трафика, подключений из нескольких стран одновременно |
+| **Конструктор отчётов** | Генерация отчётов (сводка / угрозы / риск пользователей / география / DNS / инцидент / комплаенс) в HTML, CSV, JSON — с настраиваемым периодом |
+| **Порт-сканы и брутфорс** | Отдельная детекция сетевых атак (не HTTP-трафик) с исходящих VPN-клиентов |
+
+### Remnawave-интеграция
+
+| Функция | Описание |
+|---|---|
+| **Автосинхронизация** | Каждые 1–5 минут (настраивается) подтягивает пользователей, ноды, HWID-устройства, онлайн-статистику из Remnawave API. Батчевая запись одной транзакцией — полная синхронизация 6000+ пользователей укладывается в 10–15 секунд |
+| **Честный live-статус** | Индикатор «Remnawave API» отличает «ещё гружусь после рестарта» от «панель реально недоступна» — вместо того чтобы врать «офлайн» в первые секунды после каждого перезапуска |
+| **HWID-абьюз** | Отдельная аналитика пользователей, превышающих лимит устройств, с возможностью сбросить их HWID из интерфейса |
+| **Разрешение синтетических ID** | Если Remnawave отдаёт только числовой ID без UUID (новые версии API), он резолвится в детерминированный внутренний UUID — совместимость не ломается |
+
+### Веб-интерфейс
+
+| Функция | Описание |
+|---|---|
+| **9 разделов** | Дашборд, Ноды, Пользователи, Выгрузка, Чёрный список, Threat Intel, Remnawave, Корреляция, Юзеры моста — плюс Админка |
+| **Liquid Glass дизайн** | Материал интерфейса — полупрозрачные стеклянные поверхности с преломлением фона (`backdrop-filter`), а не эффект поверх старого дизайна. Единая шкала скруглений, единая логика цвета (цвет только там, где он что-то значит) |
+| **Полная русская локализация** | Не просто перевод строк — адаптация с контекстом, корректные формы множественного числа («1 минута / 2 минуты / 5 минут»), русская локаль для всех относительных дат |
+| **Корреляция пользователей** | AI-профили с анализом фрода, общие IP-адреса между аккаунтами, общие HWID-устройства (признак шаринга подписки) |
+| **AI-ассистент** | Встроенный чат поверх любого OpenAI-совместимого API (OpenAI, Together, OpenRouter, локальный llama.cpp/vLLM) — запросы вроде «найди abusers за последний час» на естественном языке |
+| **Экспорт** | Полная посекундная хронология запросов конкретного пользователя за произвольный период — CSV или XLSX, с выбором часового пояса |
+
+### Уведомления и администрирование
+
+| Функция | Описание |
+|---|---|
+| **Telegram-алерты** | С контекстом и категориями. Доставка троттлится (не более ~20 сообщений/мин на чат — Telegram банит за флуд), с корректной обработкой `retry_after` при 429. Поддержка форумных topic ID (отправка в конкретную тему супергруппы) |
+| **Админка** | Токены Remnawave и Telegram, chat ID, topic ID, интервал синхронизации — редактируются прямо в интерфейсе. Токены хранятся в БД и **никогда не возвращаются в браузер в открытом виде**, только маской (`eyJh…fSvs`). Большинство изменений применяются мгновенно, без перезапуска контейнера |
+| **Мастер добавления ноды** | Кнопка в разделе «Ноды» генерирует готовую команду установки агента (с реальным токеном, актуальным адресом сервера) — вставить и выполнить на новом VPN-сервере по SSH. Панель сама отслеживает появление ноды в списке |
+| **gzip-сжатие API** | Тяжёлые ответы (список пользователей, HWID-абьюз) сжимаются на лету — с ~470 КБ до ~75 КБ, страницы открываются кратно быстрее на слабом канале |
+
+---
+
+## 🏗 Архитектура
 
 ```
                     ┌──────────────────────────────────────────┐
-                    │  Каждая Xray нода (Remnawave node)       │
+                    │  Каждая Xray-нода (Remnawave node)        │
                     │  ┌─────────────────────────────────┐     │
-                    │  │  xray-log-agent (docker)        │     │
-                    │  │  - reads /var/log/remnanode/    │     │
-                    │  │    access.log via inotify       │     │
-                    │  │  - batches 1000/5s, gzip        │     │
-                    │  │  - WebSocket → server           │     │
+                    │  │  xray-log-agent (docker)         │     │
+                    │  │  - читает /var/log/remnanode/    │     │
+                    │  │    access.log через inotify      │     │
+                    │  │  - батчит 1000 записей / 5с, gzip │     │
+                    │  │  - WebSocket → сервер             │     │
                     │  └─────────────────────────────────┘     │
                     └──────────────────────┬───────────────────┘
-                                           │
-                                           │ WSS
-                                           ▼
+                                            │
+                                            │ WSS
+                                            ▼
                     ┌──────────────────────────────────────────┐
-                    │  Main analyzer server                    │
+                    │  Главный сервер-анализатор                 │
                     │  ┌────────────────────────────────────┐  │
-                    │  │ analyzer-server (Go + Next.js)     │  │
-                    │  │ :8237 (WS+API)  :3925 (UI)         │  │
+                    │  │ analyzer-server (Go + Next.js)      │  │
+                    │  │ :8237 (WS + API)   :3925 (UI)        │  │
                     │  └─────────────┬──────────────────────┘  │
                     │                │                          │
                     │   ┌────────────┴────────────┐             │
                     │   ▼                         ▼             │
-                    │  postgres:17           redis:7            │
-                    │  (analytics DB)        (L2 cache)         │
+                    │  postgres:17           redis:7             │
+                    │  (аналитика,            (L2-кэш)           │
+                    │   daily-партиции)                          │
                     └──────────────────────────────────────────┘
-                                           │
-                                           │ HTTP API sync
-                                           ▼
+                                            │
+                                            │ HTTPS, REST
+                                            ▼
                     ┌──────────────────────────────────────────┐
-                    │  Remnawave panel (отдельный сервер)      │
-                    │  - users, nodes, subscriptions           │
-                    │  - XTLS-tracked online counts            │
+                    │  Remnawave-панель (отдельный сервер)       │
+                    │  - пользователи, ноды, подписки            │
+                    │  - XTLS-онлайн-статистика                  │
                     └──────────────────────────────────────────┘
 ```
 
-**Ключевые порты сервера:**
-- `8237/tcp` — WebSocket для агентов + REST API (внутренний)
-- `3925/tcp` — Next.js UI (внутренний)
-- Реверс-прокси (Caddy/nginx) терминирует TLS и роутит:
-  - `analyzer.example.com/ws*` → `:8237/ws*` (агенты)
-  - `analyzer.example.com/api/*` → `:8237/api/*` (UI → API)
-  - `analyzer.example.com/health` → `:8237/health`
-  - `analyzer.example.com/*` → `:3925` (UI)
+**Ключевые порты сервера** (внутренние — наружу торчит только реверс-прокси):
 
-## Tech stack
+- `8237/tcp` — WebSocket для агентов + REST API
+- `3925/tcp` — Next.js UI
 
-- **Server**: Go 1.25, Postgres 17, Redis 7, Next.js 16 (React 19, TypeScript, Tailwind 4)
-- **Agent**: Go 1.21, gorilla/websocket, fsnotify
-- **Storage**: Postgres с партиционированием по дням, BRIN индексы по `ts`
-- **Auth**: Bearer tokens (отдельные для UI/API и для agent WebSocket)
-- **i18n**: next-intl с RU/EN bundles, cookie-based persistence
+Реверс-прокси (nginx / Caddy / nginx-proxy-manager) терминирует TLS и роутит:
+
+```
+analyzer.example.com/ws*    →  :8237/ws*     (агенты, WebSocket)
+analyzer.example.com/api/*  →  :8237/api/*   (UI → API)
+analyzer.example.com/health →  :8237/health
+analyzer.example.com/*      →  :3925         (UI)
+```
 
 ---
 
-## Quick install — server
+## 🛠 Tech stack
 
-Один скрипт устанавливает Postgres + Redis + analyzer-server из исходников. Поддерживает Ubuntu 22.04+/Debian 12+. Подходит для bare-metal, VM, или контейнера с Docker access.
-
-```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
-cd /opt/xray-analyzer
-sudo bash scripts/install-server.sh
-```
-
-После установки скрипт:
-1. Установит Docker + docker-compose-plugin (если нет)
-2. Сгенерирует случайные `API_TOKEN`, `AGENT_TOKEN`, `POSTGRES_PASSWORD` в `.env`
-3. Соберёт images (analyzer-server из локальных Go + Next.js sources)
-4. Поднимет стек через `docker compose up -d`
-5. Подождёт healthcheck'ов и распечатает endpoints + tokens
-
-**Что нужно настроить вручную после установки:**
-
-Отредактируй `/opt/xray-analyzer/.env`:
-
-| Переменная | Назначение |
+| Слой | Технологии |
 |---|---|
-| `REMNAWAVE_URL` | URL твоей Remnawave panel (`https://panel.example.com`) |
-| `REMNAWAVE_API_TOKEN` | Bearer token из panel → Settings → API |
-| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | бот для алертов |
-| `BRIDGE_NODE_IDS` | список node_id мостов через запятую (если используешь bridge architecture) |
-| `NODE_REMNA_MAP` | mapping `agent_node_id=remnawave_name`, например `est-1=Estonia,germany-1=Germany 2` |
-
-После правок:
-```bash
-cd /opt/xray-analyzer
-docker compose up -d
-```
-
-**Reverse-proxy.** Скрипт НЕ конфигурит Caddy/nginx — это специфично для твоей инфры. Минимальный пример Caddyfile:
-
-```caddy
-analyzer.example.com {
-    @ws path /ws*
-    reverse_proxy @ws localhost:8237
-
-    @api path /api/* /health
-    reverse_proxy @api localhost:8237
-
-    reverse_proxy localhost:3925
-}
-```
+| **Backend** | Go 1.25, `net/http` (без тяжёлых фреймворков), `pgx/v5`, `gorilla/websocket` |
+| **База данных** | PostgreSQL 17 с daily-партиционированием горячих таблиц |
+| **Кэш** | Redis 7 (L2, опционален — без него работает L1 in-memory) |
+| **Frontend** | Next.js 16 (App Router), React, TypeScript, Tailwind CSS, next-intl (RU/EN) |
+| **Графики/карта** | Recharts, Mapbox GL |
+| **Агент** | Go, статически собранный, минимальный образ |
+| **AI-чат** | Любой OpenAI-совместимый `/v1/chat/completions` endpoint |
 
 ---
 
-## Quick install — agent (на каждой Xray-ноде)
+## 🚀 Быстрая установка
 
-Запусти на каждой ноде где работает Xray (Remnawave node, отдельный VPN endpoint, и т.д.):
+### Требования
+
+**Сервер-анализатор:**
+- CPU: 2 ядра (рекомендуется 4)
+- RAM: 4 ГБ минимум, 8 ГБ рекомендуется
+- Диск: от 20 ГБ свободно (рост Postgres зависит от объёма трафика и глубины хранения хронологии)
+- Docker + Docker Compose v2
+- Ubuntu/Debian (тестировалось; другие дистрибутивы — на свой риск)
+- Существующая Remnawave-панель (для полной функциональности; без неё работает в log-only режиме)
+
+**Каждая VPN-нода:**
+- Docker
+- Доступ на чтение к `/var/log/remnanode/access.log` (или где у вас лежат логи Xray)
+- Исходящий доступ к серверу-анализатору по WSS
+
+### Установка сервера
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
-  sudo SERVER_URL="wss://analyzer.example.com/ws" \
-       AUTH_TOKEN="<AGENT_TOKEN из server .env>" \
-       NODE_ID="germany-1" \
-       bash
+curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-server.sh | sudo bash
 ```
 
-Параметры (через env-переменные перед `bash`):
+Скрипт:
+1. Проверит ОС и установит Docker, если его нет
+2. Склонирует репозиторий в `/opt/xray-analyzer`
+3. Сгенерирует `.env` со случайными `API_TOKEN`, `AGENT_TOKEN`, `POSTGRES_PASSWORD`
+4. Соберёт и поднимет `docker compose`
+5. Проверит, что сервер отвечает на `/health`
 
-| Переменная | Required | Default | Описание |
-|---|---|---|---|
-| `SERVER_URL` | yes | — | WSS endpoint analyzer-сервера |
-| `AUTH_TOKEN` | yes | — | `AGENT_TOKEN` из server `.env` |
-| `NODE_ID` | yes | hostname | уникальный ID ноды (используется в дашборде) |
-| `LOG_PATH` | no | `/var/log/remnanode` | путь к директории с access.log |
-| `BATCH_SIZE` | no | 1000 | сколько записей в одном WS-кадре |
-| `BATCH_TIMEOUT` | no | 5s | максимальное время до отправки batch'а |
+После установки — обязательно настройте реверс-прокси с TLS (см. [INSTALL.md](./INSTALL.md), раздел про Caddy/nginx) и подключите Remnawave через **Админку** в веб-интерфейсе (или через `.env`, см. [Конфигурацию](#-конфигурация) ниже).
 
-**Важно для Remnawave-нод:** `Xray` config на ноде должен писать access.log в `/var/log/remnanode/access.log`. Это настраивается в Config Profile в Remnawave panel:
+### Установка агента (на каждой VPN-ноде)
 
-```json
-"log": {
-  "access": "/var/log/remnanode/access.log",
-  "error": "/var/log/remnanode/error.log",
-  "loglevel": "warning"
-}
+Готовую команду с реальными токенами вашего сервера покажет раздел **«Ноды» → «Добавить ноду»** в веб-интерфейсе. Вручную это выглядит так:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-agent.sh | sudo \
+  SERVER_URL="wss://analyzer.example.com/ws" \
+  AUTH_TOKEN="<AGENT_TOKEN с сервера>" \
+  NODE_ID="germany-1" \
+  bash
 ```
 
-И в `docker-compose.yml` для `remnanode` контейнера должен быть volume:
-```yaml
-volumes:
-  - /var/log/remnanode:/var/log/remnanode
-```
+`NODE_ID` должен быть уникальным на каждой ноде. Скрипт идемпотентен — повторный запуск обновит агента и перезапустит контейнер.
 
-Скрипт сам проверит, что директория существует и не пустая.
+Подробный пошаговый гайд (включая настройку реверс-прокси, TLS, диагностику подключения агентов) — в **[INSTALL.md](./INSTALL.md)**.
 
 ---
 
-## Configuration reference
+## ⚙️ Конфигурация
 
-### Server (.env)
+Все переменные — в [.env.example](./.env.example) с подробными комментариями. Ключевые:
 
-```bash
-# Authentication (REQUIRED, generate strong tokens)
-API_TOKEN=                     # для UI и /api/* endpoints
-AGENT_TOKEN=                   # для агентов на нодах через WS
-POSTGRES_PASSWORD=             # postgres user password
+| Переменная | Обязательна | Описание |
+|---|:---:|---|
+| `API_TOKEN` | ✅ | Bearer-токен для UI и `/api/*`. Сервер откажется стартовать без него (кроме `ALLOW_NO_AUTH=1` для локальной разработки) |
+| `AGENT_TOKEN` | ✅ | Bearer-токен для агентов на WebSocket. Один токен на все ноды |
+| `POSTGRES_PASSWORD` | ✅ | Пароль БД. Встроенного дефолта нет |
+| `REMNAWAVE_URL`, `REMNAWAVE_API_TOKEN` | Рекомендуется | Интеграция с панелью. Можно также задать/поменять живьём через Админку |
+| `REMNAWAVE_SYNC_INTERVAL` | — | Интервал синхронизации (по умолчанию `1m`). Редактируется в Админке без перезапуска |
+| `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_TOPIC_ID` | — | Алерты в Telegram. `TELEGRAM_TOPIC_ID` — опционально, для форумных супергрупп, отправит в конкретную тему |
+| `BRIDGE_NODE_IDS` | — | Список `node_id` bridge-нод для Layer-3 корреляции |
+| `NODE_REMNA_MAP` | Рекомендуется | Связь agent `NODE_ID` ↔ имя ноды в Remnawave — без неё онлайн-счётчики падают на access-log эвристику вместо точного XTLS-значения |
+| `BLACKLIST_REMOTE_URL` | — | Внешний список доменов для блоклиста. **Важно:** списки роутинга (например Re-filter-lists) не равны «список угроз» — см. предупреждение ниже |
+| `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | — | AI-ассистент. Работает с любым OpenAI-совместимым endpoint'ом |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | — | Без токена гео-карта покажет заглушку |
 
-# Remnawave integration (highly recommended)
-REMNAWAVE_ENABLED=true
-REMNAWAVE_URL=https://panel.example.com
-REMNAWAVE_API_TOKEN=<bearer>
-REMNAWAVE_SYNC_INTERVAL=1m
-
-# Bridge architecture (если используешь moscow→germany туннель)
-BRIDGE_NODE_IDS=ru-white,ru-bride       # node_id мостов
-BRIDGE_CORRELATION_WINDOW=15s            # окно для time-based fan-out
-BRIDGE_INBOUND_PATTERN=^BRIDGE_.*_IN(_\d+)?$
-
-# Node mapping (sync agent NODE_ID с Remnawave node names)
-NODE_REMNA_MAP=est-1=Estonia,germany-1=Germany 2,poland-1=Poland
-
-# Telegram alerts
-TELEGRAM_ENABLED=true
-TELEGRAM_TOKEN=<bot_token>
-TELEGRAM_CHAT_ID=<chat_id>
-
-# Threat detection thresholds
-SUSPICIOUS_REQUEST_COUNT=5
-SUSPICIOUS_TIME_WINDOW=1h
-
-# Threat-intel feeds (defaults are fine, can override)
-BLACKLIST_REMOTE_URL=https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/domains_all.lst
-BLACKLIST_RELOAD=5m
-
-# AI assistant (опционально, любой OpenAI-compatible /v1 endpoint)
-# Примеры: OpenAI, Together AI, OpenRouter, Aleria, локальный llama.cpp/vLLM.
-OPENAI_API_KEY=<key>
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o-mini
-
-# Web UI Mapbox token для geo map (опционально)
-NEXT_PUBLIC_MAPBOX_TOKEN=<token>
-```
-
-### Agent (.env)
-
-```bash
-NODE_ID=germany-1                                 # required, unique per node
-SERVER_URL=wss://analyzer.example.com/ws          # required
-AUTH_TOKEN=<AGENT_TOKEN из server>                 # required
-
-LOG_FILE_PATH=/var/log/remnanode/access.log       # default
-BATCH_SIZE=1000                                    # records per batch
-BATCH_TIMEOUT=5s                                   # max wait before send
-ENABLE_COMPRESSION=true                            # gzip-сжимать batches
-```
+> ⚠️ **О `BLACKLIST_REMOTE_URL` по умолчанию.** Дефолтный источник (Re-filter-lists) — это список доменов, заблокированных в РФ, обычно используемый для *роутинга через прокси*, а не список вредоносных доменов. В нём буквально лежат `instagram.com`, `youtube.com` и подобные. Если вы используете эту переменную как есть, счётчик «блоклист-хитов» будет считать заход на YouTube нарушением. Для реальной abuse-детекции ориентируйтесь на раздел **Threat Intel** (1.5M+ индикаторов из специализированных фидов) — он не имеет этой проблемы.
 
 ---
 
-## Operations
+## 🔒 Безопасность
 
-### Логи
-
-```bash
-# Server
-cd /opt/xray-analyzer
-docker compose logs -f analyzer-server      # API + UI
-docker compose logs -f analyzer-postgres    # DB
-docker compose logs -f analyzer-redis       # Cache
-
-# Agent (на ноде)
-cd /opt/xray-analyzer
-docker compose -f docker-compose.agent.yml logs -f xray-log-agent
-```
-
-### Healthchecks
-
-```bash
-# Server health (включает проверку партиций)
-curl -fsS http://localhost:8237/health
-
-# Stats endpoint (нужен API_TOKEN)
-curl -sS -H "Authorization: Bearer $API_TOKEN" http://localhost:8237/api/stats | jq
-```
-
-### Backup Postgres
-
-```bash
-docker exec analyzer-postgres pg_dump -U xray_analyzer -Fc xray_analyzer \
-  > backup-$(date +%Y%m%d-%H%M).dump
-```
-
-Или snapshot всего volume (faster, но требует stop'а):
-```bash
-docker compose stop analyzer-postgres
-docker run --rm -v log-analyzer_analyzer-postgres-data:/d -v $PWD:/b alpine \
-  tar czf /b/pg-backup-$(date +%Y%m%d).tgz /d
-docker compose start analyzer-postgres
-```
-
-### Обновление
-
-Для сервера:
-```bash
-cd /opt/xray-analyzer
-git pull origin main
-docker compose build analyzer-server
-docker compose up -d analyzer-server
-```
-
-Для агента (на каждой ноде):
-```bash
-cd /opt/xray-analyzer
-git pull origin main
-docker compose -f docker-compose.agent.yml build
-docker compose -f docker-compose.agent.yml up -d --force-recreate
-```
-
-Раскатывай агенты по одной ноде с проверкой `nodes_connected` в `/api/stats` после каждой.
-
-### Retention
-
-Hot tables (`bridged_flows`, `alerts`, `blacklist_matches`, `threat_matches`, `anomalies`) партиционированы по дням. Partition manager в analyzer-server:
-- Каждые 6 часов создаёт партиции на сегодня + 2 дня вперёд
-- Дропает партиции старше retention (`bridged_flows: 14d, остальное: 30d`)
-
-`/health` сигнализирует если today's партиция отсутствует ИЛИ default partition не пустая (обе ситуации = partition manager пропустил окно).
-
-### Scale
-
-При >100 нод / >50M flows/day:
-- Bump postgres `shared_buffers=4GB`, `effective_cache_size=12GB` (нужно ~16GB RAM на VM)
-- Поднять `BATCH_SIZE=5000` на агентах для меньше WS round-trips
-- Рассмотреть pgbouncer перед postgres
-- Disk: ~150 байт/строка × 7M строк/день = ~1 GB/день, 14 GB steady state
+- Токены (`API_TOKEN`, `AGENT_TOKEN`, интеграции) обязательны — сервер не стартует без них, если явно не разрешено `ALLOW_NO_AUTH=1`
+- Токены интеграций, сохранённые через Админку, хранятся в БД и **никогда не возвращаются в браузер полностью** — только в виде маски (`eyJh…fSvs`)
+- WebSocket-соединения агентов защищены отдельным токеном, независимым от токена UI
+- CORS для WebSocket по умолчанию ограничен same-origin; кросс-доменные подключения нужно явно разрешить через `ALLOWED_ORIGINS`
+- Мастер добавления ноды **не хранит SSH-доступ** ни к одной ноде — только генерирует команду, которую вы сами выполняете. Это осознанный компромисс: панель с root-доступом ко всем VPN-серверам сразу — избыточно большая цель для домашнего/небольшого деплоя
 
 ---
 
-## Troubleshooting
+## ❓ FAQ и troubleshooting
 
-### Агент не подключается
+Подробный troubleshooting (агент не подключается, синхронизация зависла, WebSocket отваливается и т.д.) — в **[INSTALL.md](./INSTALL.md)**. Быстрые ответы на частые вопросы:
 
-```bash
-# На агентной ноде
-docker compose -f docker-compose.agent.yml logs --tail 30 xray-log-agent | grep -E "error|connect"
-```
+**Почему Remnawave показывает «офлайн» сразу после перезапуска?**
+Не должен — индикатор различает «первая синхронизация ещё не завершилась» (`loading`) и «панель реально недоступна» (`offline`, только если синхронизация просрочена в 3 интервала). Если видите «офлайн» дольше пары минут после рестарта — проверьте `REMNAWAVE_URL`/`REMNAWAVE_API_TOKEN` в Админке.
 
-Типичные причины:
-- `403 forbidden` → `AUTH_TOKEN` на агенте не совпадает с `AGENT_TOKEN` на сервере
-- `connection refused` / `tls: ...` → reverse-proxy не пропускает WebSocket (Upgrade header)
-- `no such file or directory: /var/log/remnanode/access.log` → xray не пишет access log в эту директорию (см. Remnawave config profile setup выше)
+**Telegram перестал слать алерты / шлёт с большой задержкой.**
+Это защита от флуда — Telegram банит ботов, отправляющих больше ~20 сообщений в минуту в один чат. Доставка троттлится автоматически; при большом объёме алертов сообщения просто идут с паузой, ничего не теряется в самом дашборде (в БД пишется всё).
 
-### Дашборд показывает голые UUID вместо username
+**Как добавить новую ноду?**
+Раздел «Ноды» → кнопка «Добавить ноду» → введите имя → скопируйте команду → выполните на новом сервере по SSH (root). Панель сама покажет, когда нода подключится.
 
-`remna_users` ещё не синканулся — подожди 1-5 минут после первого старта analyzer-server. Если sync не работает:
-```bash
-docker compose logs analyzer-server | grep -i remnawave
-```
-Проверь `REMNAWAVE_URL` (должен быть полный URL с `https://`) и `REMNAWAVE_API_TOKEN` (выдаётся в Settings → API в panel).
-
-### `/api/stats` total_users не совпадает с Remnawave
-
-Sync прогоняется раз в `REMNAWAVE_SYNC_INTERVAL` (default 1m). Подожди следующий цикл — числа сойдутся. Stale entries (юзеры удалённые из panel) удаляются автоматически после первого успешного sync'а.
-
-### Disk fills up
-
-```bash
-# Посмотреть что занимает место
-docker exec analyzer-postgres psql -U xray_analyzer -d xray_analyzer \
-  -c "\dt+" | sort -k7 -h -r | head -15
-```
-
-Если bridged_flows >25 GB — partition manager не работает. Проверь `/health`:
-```bash
-curl http://localhost:8237/health
-```
-Должен вернуть `200`. Если `503 partition unhealthy` — посмотри логи на наличие SQL errors в partition creation/drop.
+**Можно ли работать без Remnawave?**
+Да, в log-only режиме — без резолва username'ов и HWID-статистики, но с полной аналитикой по логам и threat intel.
 
 ---
 
-## Development
-
-### Local dev
+## 🤝 Разработка
 
 ```bash
-# Server
-cd server
-go run ./cmd/server
+# сервер
+cd server && go build ./... && go test ./...
 
-# Web UI
-cd server/web
-npm install
-npm run dev
+# веб
+cd server/web && npm install && npm run dev
 ```
 
-### Tests
-
-```bash
-cd server
-DOCKER_HOST=unix:///var/run/docker.sock go test ./...
-```
-
-Тесты используют testcontainers-go с `postgres:17-alpine` — поднимают одноразовый контейнер postgres на запуск.
+Структура репозитория, схема БД, форматы сообщений WebSocket — см. [INSTALL.md](./INSTALL.md) и комментарии в коде.
 
 ---
 
-## Лицензия и контрибьютинг
+---
 
-Внутренний проект. PRs welcome — фокус на:
-- Новые threat-intel feeds
-- UI components (vanilla shadcn/Radix)
-- Performance improvements
+<div align="center">
 
-Issue tracker: https://github.com/qwertyhq/xray-analyzer/issues
+Разработано и поддерживается **[Theraf1u](https://github.com/Theraf1u)**
+
+</div>
