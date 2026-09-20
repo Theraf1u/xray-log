@@ -105,7 +105,10 @@ export function NodesTable({ nodes, onDeleteNode, onDelete, showActions }: Nodes
   }, [nodes])
 
   return (
-    <div className="rounded-md border overflow-x-auto">
+    // No border/rounded wrapper: the table now sits directly on the glass
+    // panel that hosts it, and a second box here would nest one surface
+    // inside another.
+    <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>

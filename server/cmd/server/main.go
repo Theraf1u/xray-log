@@ -48,14 +48,34 @@ func main() {
 	defer store.Close()
 	log.Println("storage: initialized")
 
+	// Admin-panel overrides, if any were ever saved, take precedence over the
+	// env-var bootstrap defaults. A nil result (table empty — nobody has used
+	// the admin panel yet) leaves cfg exactly as config.Load() produced it.
+	if dbSettings, err := store.GetAppSettings(ctx); err != nil {
+		log.Printf("app_settings: could not read admin overrides, using env defaults: %v", err)
+	} else if dbSettings != nil {
+		cfg.RemnawaveEnabled = dbSettings.RemnawaveEnabled
+		cfg.RemnawaveURL = dbSettings.RemnawaveURL
+		cfg.RemnawaveAPIToken = dbSettings.RemnawaveAPIToken
+		if dbSettings.RemnawaveSyncIntervalSeconds > 0 {
+			cfg.RemnawaveSyncInterval = time.Duration(dbSettings.RemnawaveSyncIntervalSeconds) * time.Second
+		}
+		cfg.TelegramEnabled = dbSettings.TelegramEnabled
+		cfg.TelegramToken = dbSettings.TelegramToken
+		cfg.TelegramChatID = dbSettings.TelegramChatID
+		cfg.TelegramTopicID = dbSettings.TelegramTopicID
+		log.Println("app_settings: applied admin panel overrides")
+	}
+
 	// Start partition manager — creates today+2 future partitions and drops
 	// expired ones on startup, then re-runs every 6 hours.
 	pm := partitions.NewManager(store.Pool(), []partitions.Table{
-		{Name: "bridged_flows", RetentionDays: 14},
-		{Name: "alerts", RetentionDays: 30},
-		{Name: "blacklist_matches", RetentionDays: 30},
-		{Name: "threat_matches", RetentionDays: 30},
-		{Name: "anomalies", RetentionDays: 30},
+		{Name: "request_events", RetentionDays: 0},
+		{Name: "bridged_flows", RetentionDays: 0},
+		{Name: "alerts", RetentionDays: 0},
+		{Name: "blacklist_matches", RetentionDays: 0},
+		{Name: "threat_matches", RetentionDays: 0},
+		{Name: "anomalies", RetentionDays: 0},
 	})
 	if err := pm.Tick(ctx); err != nil {
 		log.Fatalf("partition manager initial tick: %v", err)
@@ -136,28 +156,19 @@ func main() {
 		log.Printf("threatintel: started with %d indicators", threatIntelSvc.GetIndicatorCount())
 	}
 
-	// Initialize Telegram bot if enabled
-	if cfg.TelegramEnabled && cfg.TelegramToken != "" && cfg.TelegramChatID != "" {
-		bot := telegram.New(cfg.TelegramToken, cfg.TelegramChatID, alertCh)
-		go bot.Start(ctx)
-
-		// Send test message
-		if err := bot.SendTestMessage(); err != nil {
+	// The bot is always constructed and started, configured or not: the
+	// admin panel can supply credentials and flip it on later, and Start's
+	// own loop already handles "disabled or unconfigured" by dropping
+	// alerts — so there is no separate drain goroutine to maintain anymore.
+	telegramBot := telegram.New(cfg.TelegramToken, cfg.TelegramChatID, cfg.TelegramTopicID, alertCh)
+	telegramBot.SetEnabled(cfg.TelegramEnabled)
+	go telegramBot.Start(ctx)
+	if cfg.TelegramEnabled && telegramBot.IsConfigured() {
+		if err := telegramBot.SendTestMessage(); err != nil {
 			log.Printf("telegram: failed to send test message: %v", err)
 		}
 	} else {
-		log.Println("telegram: disabled (no token/chat_id)")
-		// Silently drain alert channel if telegram is disabled
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-alertCh:
-					// Discard alerts silently
-				}
-			}
-		}()
+		log.Println("telegram: disabled or not configured (set it up from the admin panel)")
 	}
 
 	// Start cleanup goroutine
@@ -170,16 +181,6 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Cleanup old data (keep 30 days)
-				if err := store.CleanupOldData(ctx, 30); err != nil {
-					log.Printf("cleanup error: %v", err)
-				}
-				// Cleanup old threat matches (keep 30 days)
-				if deleted, err := store.CleanupOldThreatMatches(ctx, 30*24*time.Hour); err != nil {
-					log.Printf("cleanup threat matches error: %v", err)
-				} else if deleted > 0 {
-					log.Printf("cleanup: deleted %d old threat matches", deleted)
-				}
 				// Cleanup analyzer alert cache
 				anal.CleanupAlertCache()
 			}
@@ -188,6 +189,7 @@ func main() {
 
 	// Initialize and start server
 	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
+	srv.SetTelegramBot(telegramBot)
 	srv.SetThreatIntel(threatIntelSvc)
 	srv.SetPartitionManager(pm)
 	if redisClient != nil {
@@ -215,23 +217,24 @@ func main() {
 		log.Fatalln("auth: refusing to start — AGENT_TOKEN is not set. Set AGENT_TOKEN, or ALLOW_NO_AUTH=1 for local dev only.")
 	}
 
-	// Initialize Remnawave client and sync service
-	var remnaSvc *remnawave.SyncService
-	var remnaClient *remnawave.Client
-	if cfg.RemnawaveEnabled && cfg.RemnawaveURL != "" && cfg.RemnawaveAPIToken != "" {
-		remnaClient = remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
-		remnaSvc = remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
-		remnaSvc.SetIDCacheRedis(redisClient)
-		remnaSvc.SetStorage(store) // Persist data to SQLite
-		// Warm cache after each sync for fast page loads
-		remnaSvc.OnSyncComplete(func() {
-			store.WarmCache(ctx)
-		})
-		srv.SetRemnawave(remnaSvc)
-		go remnaSvc.Start(ctx)
+	// Same reasoning as the Telegram bot above: always construct and start,
+	// so enabling Remnawave from the admin panel later needs no restart.
+	// Start's loop polls harmlessly while unconfigured (see sync.go).
+	remnaClient := remnawave.NewClient(cfg.RemnawaveURL, cfg.RemnawaveAPIToken)
+	remnaSvc := remnawave.NewSyncService(remnaClient, cfg.RemnawaveSyncInterval)
+	remnaSvc.SetEnabled(cfg.RemnawaveEnabled)
+	remnaSvc.SetIDCacheRedis(redisClient)
+	remnaSvc.SetStorage(store) // Persist data to Postgres
+	// Warm cache after each sync for fast page loads
+	remnaSvc.OnSyncComplete(func() {
+		store.WarmCache(ctx)
+	})
+	srv.SetRemnawave(remnaSvc)
+	go remnaSvc.Start(ctx)
+	if cfg.RemnawaveEnabled && remnaClient.IsConfigured() {
 		log.Printf("remnawave: enabled, sync interval: %v, storage: enabled", cfg.RemnawaveSyncInterval)
 	} else {
-		log.Println("remnawave: disabled (no URL/token configured)")
+		log.Println("remnawave: disabled or not configured (set it up from the admin panel)")
 	}
 
 	// Initial cache warm-up

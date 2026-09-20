@@ -10,11 +10,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/remnawave"
 )
 
-// Adapter methods to implement remnawave.StorageWriter interface
-
-// UpsertRemnaUserFromSync adapts remnawave.RemnaUserData to storage
-func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUserData) error {
-	query := `
+const upsertRemnaUserSQL = `
 		INSERT INTO remna_users (
 			uuid, id, short_uuid, username, email, status,
 			traffic_limit_bytes, used_traffic_bytes, lifetime_traffic_bytes,
@@ -50,20 +46,8 @@ func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUser
 			plan = EXCLUDED.plan,
 			us_id = EXCLUDED.us_id
 	`
-	_, err := s.db.ExecContext(ctx, query,
-		user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
-		user.TrafficLimitBytes, user.UsedTrafficBytes, user.LifetimeTrafficBytes,
-		user.TrafficLimitStrategy, user.ExpireAt, user.OnlineAt, user.FirstConnectedAt,
-		user.HwidDeviceLimit, user.HwidDeviceCount, user.TelegramID, user.Description, user.Tag,
-		user.CreatedAt, user.UpdatedAt, user.SyncedAt,
-		user.RealName, user.Phone, user.TelegramUser, user.PaymentInfo, user.Plan, user.USID,
-	)
-	return err
-}
 
-// UpsertRemnaHwidDevice adapts remnawave.RemnaHwidData to storage
-func (s *Storage) UpsertRemnaHwidDevice(ctx context.Context, device *remnawave.RemnaHwidData) error {
-	query := `
+const upsertRemnaHwidSQL = `
 		INSERT INTO remna_hwid_devices (
 			hwid, user_uuid, username, platform, os_version, device_model, app_version,
 			first_seen_at, last_active_at, synced_at
@@ -77,11 +61,80 @@ func (s *Storage) UpsertRemnaHwidDevice(ctx context.Context, device *remnawave.R
 			last_active_at = EXCLUDED.last_active_at,
 			synced_at = EXCLUDED.synced_at
 	`
-	_, err := s.db.ExecContext(ctx, query,
+
+// Adapter methods to implement remnawave.StorageWriter interface
+
+// UpsertRemnaUserFromSync adapts remnawave.RemnaUserData to storage
+func (s *Storage) UpsertRemnaUser(ctx context.Context, user *remnawave.RemnaUserData) error {
+	_, err := s.db.ExecContext(ctx, upsertRemnaUserSQL,
+		user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
+		user.TrafficLimitBytes, user.UsedTrafficBytes, user.LifetimeTrafficBytes,
+		user.TrafficLimitStrategy, user.ExpireAt, user.OnlineAt, user.FirstConnectedAt,
+		user.HwidDeviceLimit, user.HwidDeviceCount, user.TelegramID, user.Description, user.Tag,
+		user.CreatedAt, user.UpdatedAt, user.SyncedAt,
+		user.RealName, user.Phone, user.TelegramUser, user.PaymentInfo, user.Plan, user.USID,
+	)
+	return err
+}
+
+// UpsertRemnaHwidDevice adapts remnawave.RemnaHwidData to storage
+func (s *Storage) UpsertRemnaHwidDevice(ctx context.Context, device *remnawave.RemnaHwidData) error {
+	_, err := s.db.ExecContext(ctx, upsertRemnaHwidSQL,
 		device.Hwid, device.UserUUID, device.Username, device.Platform, device.OSVersion,
 		device.DeviceModel, device.AppVersion, device.FirstSeenAt, device.LastActiveAt, device.SyncedAt,
 	)
 	return err
+}
+
+// UpsertRemnaUsers persists one full API snapshot in a single transaction.
+// This avoids thousands of individual WAL flushes on every synchronization.
+func (s *Storage) UpsertRemnaUsers(ctx context.Context, users []*remnawave.RemnaUserData) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, upsertRemnaUserSQL)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, user := range users {
+		if _, err := stmt.ExecContext(ctx,
+			user.UUID, user.ID, user.ShortUUID, user.Username, user.Email, user.Status,
+			user.TrafficLimitBytes, user.UsedTrafficBytes, user.LifetimeTrafficBytes,
+			user.TrafficLimitStrategy, user.ExpireAt, user.OnlineAt, user.FirstConnectedAt,
+			user.HwidDeviceLimit, user.HwidDeviceCount, user.TelegramID, user.Description, user.Tag,
+			user.CreatedAt, user.UpdatedAt, user.SyncedAt,
+			user.RealName, user.Phone, user.TelegramUser, user.PaymentInfo, user.Plan, user.USID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// UpsertRemnaHwidDevices persists one full HWID snapshot in a single transaction.
+func (s *Storage) UpsertRemnaHwidDevices(ctx context.Context, devices []*remnawave.RemnaHwidData) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, upsertRemnaHwidSQL)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, device := range devices {
+		if _, err := stmt.ExecContext(ctx,
+			device.Hwid, device.UserUUID, device.Username, device.Platform, device.OSVersion,
+			device.DeviceModel, device.AppVersion, device.FirstSeenAt, device.LastActiveAt, device.SyncedAt,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // UpdateRemnaUserHwidCounts updates hwid_device_count for all users based on actual HWID data

@@ -54,6 +54,8 @@ type Service struct {
 	cacheTTL  time.Duration
 	mu        sync.RWMutex
 	rateLimit chan struct{}
+	rateMu sync.Mutex
+	lastRequest time.Time
 }
 
 // NewService creates a new IP info service
@@ -116,6 +118,12 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 	}
 	s.mu.RUnlock()
 
+	// ip-api.com free tier allows about 45 requests/minute. Serialize and
+	// pace requests so a burst of newly seen client IPs does not produce 429s.
+	if err := s.waitForRateLimit(ctx); err != nil {
+		return nil, err
+	}
+
 	// Fetch from API
 	info, err := s.fetchFromAPI(ctx, ip)
 	if err != nil {
@@ -128,6 +136,22 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 	s.mu.Unlock()
 
 	return info, nil
+}
+
+
+func (s *Service) waitForRateLimit(ctx context.Context) error {
+	s.rateMu.Lock()
+	wait := time.Until(s.lastRequest.Add(1500 * time.Millisecond))
+	if wait < 0 { wait = 0 }
+	s.lastRequest = time.Now().Add(wait)
+	s.rateMu.Unlock()
+	if wait == 0 { return nil }
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-t.C: return nil
+	case <-ctx.Done(): return ctx.Err()
+	}
 }
 
 // fetchFromAPI fetches IP info from ip-api.com

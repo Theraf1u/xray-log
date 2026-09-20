@@ -222,10 +222,10 @@ export function useUserDetails(userEmail: string) {
           setDetails(await res.json());
           setError(null);
         } else {
-          setError("User not found");
+          setError("Пользователь не найден");
         }
       } catch {
-        setError("Failed to fetch user details");
+        setError("Не удалось загрузить данные пользователя");
       } finally {
         setLoading(false);
       }

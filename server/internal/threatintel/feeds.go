@@ -99,6 +99,7 @@ func NewFeedLoader() *FeedLoader {
 		client: &http.Client{
 			Timeout: 120 * time.Second, // Increased timeout for large feeds
 			Transport: &http.Transport{
+				Proxy:              http.ProxyFromEnvironment,
 				MaxIdleConns:       10,
 				IdleConnTimeout:    30 * time.Second,
 				DisableCompression: false,

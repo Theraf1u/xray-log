@@ -6,6 +6,8 @@ import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PaginationControls, usePagination } from "@/components/ui/data-table";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -73,7 +75,7 @@ import {
   Phone,
   User,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { SubscriptionAbuse, RemnawaveAbuseUser, TimeRange } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 
@@ -257,7 +259,7 @@ export function SubscriptionAbuseAnalytics({
       setIpAbusers(ipData || []);
       setHwidAbusers(hwidData.users || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : tCommon("unknown"));
     } finally {
       setLoading(false);
     }
@@ -580,6 +582,10 @@ export function SubscriptionAbuseAnalytics({
     return result;
   }, [combinedAbusers, search, riskFilter, hwidFilter, sortBy]);
 
+  // 25 rows per page: an expanded row is expensive to build, so a short page
+  // keeps navigation into this tab instant.
+  const abusersPagination = usePagination(filteredAbusers, 25);
+
   const toggleExpanded = (email: string) => {
     setExpandedUsers(prev => {
       const next = new Set(prev);
@@ -620,86 +626,59 @@ export function SubscriptionAbuseAnalytics({
 
   return (
     <div className="space-y-6">
-      {/* Stats Overview */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <UserX className="h-4 w-4 text-red-500" />
-              {t("suspicious")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalSuspicious}</div>
-            <p className="text-xs text-muted-foreground">{t("suspiciousUsers")}</p>
-          </CardContent>
-        </Card>
-
-        <Card className={stats.criticalRisk > 0 ? "border-red-500/50" : ""}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-600" />
-              {t("critical")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.criticalRisk}</div>
-            <p className="text-xs text-muted-foreground">score ≥80</p>
-          </CardContent>
-        </Card>
-
-        <Card className={stats.highRisk > 0 ? "border-orange-500/50" : ""}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
-              {t("high")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{stats.highRisk}</div>
-            <p className="text-xs text-muted-foreground">score 60-79</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Shield className="h-4 w-4 text-yellow-600" />
-              {t("medium")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{stats.mediumRisk}</div>
-            <p className="text-xs text-muted-foreground">score 40-59</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Monitor className="h-4 w-4 text-muted-foreground" />
-              {t("uniqueIPs")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUniqueIPs}</div>
-            <p className="text-xs text-muted-foreground">{t("ipAddresses")}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Smartphone className="h-4 w-4 text-muted-foreground" />
-              {t("hwidDevices")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUniqueHWIDs}</div>
-            <p className="text-xs text-muted-foreground">{t("devices")}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Six bordered cards, each spending a CardHeader and CardContent on a
+          single number, became one rail. Every figure carries its own motif so
+          the imagery says what is being counted instead of decorating the row. */}
+      <StatRail
+        columns={6}
+        items={[
+          {
+            key: "suspicious",
+            label: t("suspicious"),
+            value: stats.totalSuspicious,
+            hint: t("suspiciousUsers"),
+            motif: "users",
+          },
+          {
+            key: "critical",
+            label: t("critical"),
+            value: stats.criticalRisk,
+            hint: t("scoreAtLeast", { score: 80 }),
+            tone: stats.criticalRisk > 0 ? "bad" : undefined,
+            dot: stats.criticalRisk > 0 ? "bad" : undefined,
+            motif: "shield",
+          },
+          {
+            key: "high",
+            label: t("high"),
+            value: stats.highRisk,
+            hint: t("scoreRange", { from: 60, to: 79 }),
+            tone: stats.highRisk > 0 ? "warn" : undefined,
+            motif: "pulse",
+          },
+          {
+            key: "medium",
+            label: t("medium"),
+            value: stats.mediumRisk,
+            hint: t("scoreRange", { from: 40, to: 59 }),
+            motif: "stream",
+          },
+          {
+            key: "ips",
+            label: t("uniqueIPs"),
+            value: stats.totalUniqueIPs,
+            hint: t("ipAddresses"),
+            motif: "nodes",
+          },
+          {
+            key: "hwids",
+            label: t("hwidDevices"),
+            value: stats.totalUniqueHWIDs,
+            hint: t("devices"),
+            motif: "link",
+          },
+        ]}
+      />
 
       {/* Average Score and Top Countries */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -738,9 +717,10 @@ export function SubscriptionAbuseAnalytics({
           <CardContent>
             <div className="flex flex-wrap gap-2">
               {stats.topCountries.map((c) => (
-                <Badge key={c.country_code} variant="outline" className="gap-1">
-                  {getFlagEmoji(c.country_code)} {c.country_code}
-                  <span className="text-muted-foreground">({c.count})</span>
+                <Badge key={c.country_code} variant="outline" className="gap-1.5">
+                  <span className="font-flag text-base leading-none">{getFlagEmoji(c.country_code)}</span>
+                  {c.country || c.country_code}
+                  <span className="text-muted-foreground">{c.count}</span>
                 </Badge>
               ))}
               {stats.topCountries.length === 0 && (
@@ -874,7 +854,7 @@ export function SubscriptionAbuseAnalytics({
             </div>
           ) : (
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {filteredAbusers.map((user) => {
+              {abusersPagination.paginatedData.map((user) => {
                 const riskLevel = getRiskLevel(user.abuse_score);
                 const isExpanded = expandedUsers.has(user.user_email);
 
@@ -984,7 +964,7 @@ export function SubscriptionAbuseAnalytics({
                                         {user.unique_nodes}
                                       </Badge>
                                     </TooltipTrigger>
-                                    <TooltipContent>Unique Nodes</TooltipContent>
+                                    <TooltipContent>{tCommon("uniqueNodes")}</TooltipContent>
                                   </Tooltip>
                                 </TooltipProvider>
                               )}
@@ -1096,7 +1076,7 @@ export function SubscriptionAbuseAnalytics({
                                       <Badge variant="secondary" className="text-xs">{ip.requests} req</Badge>
                                       {ip.last_seen && isValidDate(ip.last_seen) && (
                                         <span className="text-muted-foreground">
-                                          {formatDistanceToNow(new Date(ip.last_seen), { addSuffix: true })}
+                                          {formatDistanceToNowRu(new Date(ip.last_seen))}
                                         </span>
                                       )}
                                     </div>
@@ -1130,15 +1110,15 @@ export function SubscriptionAbuseAnalytics({
                                     className="text-xs bg-background p-3 rounded border grid grid-cols-2 md:grid-cols-4 gap-2"
                                   >
                                     <div>
-                                      <span className="text-muted-foreground">HWID:</span>
+                                      <span className="text-muted-foreground">{t("hwidLabelColon")}</span>
                                       <span className="ml-1 font-mono">{device.hwid.slice(0, 16)}...</span>
                                     </div>
                                     <div>
-                                      <span className="text-muted-foreground">Platform:</span>
+                                      <span className="text-muted-foreground">{t("platformLabelColon")}</span>
                                       <span className="ml-1">{getPlatformIcon(device.platform || "")} {device.platform || "Unknown"}</span>
                                     </div>
                                     <div>
-                                      <span className="text-muted-foreground">Model:</span>
+                                      <span className="text-muted-foreground">{t("modelLabelColon")}</span>
                                       <span className="ml-1">{device.deviceModel || "—"}</span>
                                     </div>
                                     <div>
@@ -1173,7 +1153,7 @@ export function SubscriptionAbuseAnalytics({
                           {user.last_activity && isValidDate(user.last_activity) && (
                             <div className="text-xs text-muted-foreground flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              {t("lastActivity")} {formatDistanceToNow(new Date(user.last_activity), { addSuffix: true })}
+                              {t("lastActivity")} {formatDistanceToNowRu(new Date(user.last_activity))}
                             </div>
                           )}
                         </div>
@@ -1184,6 +1164,9 @@ export function SubscriptionAbuseAnalytics({
               })}
             </div>
           )}
+
+          {/* The hook already exposes exactly the props this control takes. */}
+          <PaginationControls {...abusersPagination} />
         </CardContent>
       </Card>
     </div>

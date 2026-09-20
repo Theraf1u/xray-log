@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import {
   Card,
   CardContent,
@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatRail } from "@/components/ui/stat-rail";
 import {
   Users,
   Smartphone,
@@ -47,6 +48,7 @@ import {
   User,
 } from "lucide-react";
 import { RemnawaveStats, RemnawaveUser } from "@/lib/types";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
 
 // Format bytes to human readable
 function formatBytes(bytes: number): string {
@@ -58,16 +60,18 @@ function formatBytes(bytes: number): string {
 }
 
 // Get status badge
-function getStatusBadge(status: string) {
+// Module-level: no hook access, so the caller passes already-translated
+// labels rather than this function calling useTranslations itself.
+function getStatusBadge(status: string, labels: Record<string, string>) {
   switch (status) {
     case "ACTIVE":
-      return <Badge variant="default" className="bg-green-500"><CheckCircle className="w-3 h-3 mr-1" />Active</Badge>;
+      return <Badge variant="default" className="bg-green-500"><CheckCircle className="w-3 h-3 mr-1" />{labels.active}</Badge>;
     case "DISABLED":
-      return <Badge variant="destructive"><Ban className="w-3 h-3 mr-1" />Disabled</Badge>;
+      return <Badge variant="destructive"><Ban className="w-3 h-3 mr-1" />{labels.disabled}</Badge>;
     case "LIMITED":
-      return <Badge variant="secondary" className="bg-yellow-500 text-black"><AlertTriangle className="w-3 h-3 mr-1" />Limited</Badge>;
+      return <Badge variant="secondary" className="bg-yellow-500 text-black"><AlertTriangle className="w-3 h-3 mr-1" />{labels.limited}</Badge>;
     case "EXPIRED":
-      return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Expired</Badge>;
+      return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />{labels.expired}</Badge>;
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -75,6 +79,12 @@ function getStatusBadge(status: string) {
 
 export function RemnawaveUsersTable() {
   const t = useTranslations("remnawaveUsersTable");
+  const statusLabels = {
+    active: t("statusActive"),
+    disabled: t("statusDisabled"),
+    limited: t("statusLimited"),
+    expired: t("statusExpired"),
+  };
   const [stats, setStats] = useState<RemnawaveStats | null>(null);
   const [users, setUsers] = useState<RemnawaveUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +94,7 @@ export function RemnawaveUsersTable() {
   const [minDevices, setMinDevices] = useState<number>(0);
   const [sortBy, setSortBy] = useState<"username" | "devices" | "traffic" | "online">("username");
   const [page, setPage] = useState(1);
-  const pageSize = 25;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   const fetchData = useCallback(async () => {
     try {
@@ -192,12 +202,9 @@ export function RemnawaveUsersTable() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserX className="h-5 w-5" />
-            Remnawave Not Configured
+            {t("notConfiguredTitle")}
           </CardTitle>
-          <CardDescription>
-            Remnawave integration is not enabled. Configure REMNAWAVE_URL and
-            REMNAWAVE_API_TOKEN environment variables to enable.
-          </CardDescription>
+          <CardDescription>{t("notConfiguredDesc")}</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -210,77 +217,50 @@ export function RemnawaveUsersTable() {
 
   return (
     <div className="space-y-4">
-      {/* Stats Cards */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              Total Users
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUsers}</div>
-            <p className="text-xs text-muted-foreground">
-              {activeUsers} active
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Smartphone className="h-4 w-4 text-muted-foreground" />
-              HWID Devices
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalDevices}</div>
-            <p className="text-xs text-muted-foreground">
-              {(totalDevices / Math.max(stats.totalUsers, 1)).toFixed(1)} avg per user
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              HWID Abusers
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{abusersCount}</div>
-            <p className="text-xs text-muted-foreground">
-              exceeding device limit
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              Last Sync
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-lg font-bold">
-              {stats.lastSync
-                ? formatDistanceToNow(new Date(stats.lastSync), { addSuffix: true })
-                : "Never"}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 h-7 px-2"
-              onClick={fetchData}
-            >
-              <RefreshCw className="h-3 w-3 mr-1" />
-              Refresh
-            </Button>
-          </CardContent>
-        </Card>
+      {/* Four bordered cards became one rail. This tab's own header, HWID
+          and traffic numbers already repeat the top-of-page rail; the last
+          two figures here (abusers, last sync) are the ones unique to this
+          view, so they stay rather than trimming the row down further. */}
+      <StatRail
+        items={[
+          {
+            key: "totalUsers",
+            label: t("statTotalUsers"),
+            value: stats.totalUsers,
+            hint: t("statActiveCount", { count: activeUsers }),
+            motif: "users",
+          },
+          {
+            key: "hwidDevices",
+            label: t("statHwidDevices"),
+            value: totalDevices,
+            hint: t("statAvgPerUser", { avg: (totalDevices / Math.max(stats.totalUsers, 1)).toFixed(1) }),
+            motif: "link",
+          },
+          {
+            key: "abusers",
+            label: t("statHwidAbusers"),
+            value: abusersCount,
+            hint: t("statExceedingLimit"),
+            tone: abusersCount > 0 ? "bad" : undefined,
+            dot: abusersCount > 0 ? "bad" : undefined,
+            motif: "shield",
+          },
+          {
+            key: "lastSync",
+            label: t("statLastSync"),
+            value: stats.lastSync
+              ? formatDistanceToNowRu(new Date(stats.lastSync))
+              : t("statNever"),
+            motif: "pulse",
+          },
+        ]}
+      />
+      <div className="flex justify-end -mt-2">
+        <Button variant="ghost" size="sm" onClick={fetchData}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          {t("refresh")}
+        </Button>
       </div>
 
       {/* Filters */}
@@ -302,10 +282,10 @@ export function RemnawaveUsersTable() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("allStatuses")}</SelectItem>
-            <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="DISABLED">Disabled</SelectItem>
-            <SelectItem value="LIMITED">Limited</SelectItem>
-            <SelectItem value="EXPIRED">Expired</SelectItem>
+            <SelectItem value="ACTIVE">{t("statusActive")}</SelectItem>
+            <SelectItem value="DISABLED">{t("statusDisabled")}</SelectItem>
+            <SelectItem value="LIMITED">{t("statusLimited")}</SelectItem>
+            <SelectItem value="EXPIRED">{t("statusExpired")}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={abuseFilter} onValueChange={setAbuseFilter}>
@@ -352,12 +332,12 @@ export function RemnawaveUsersTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Traffic</TableHead>
-              <TableHead className="text-right">Devices</TableHead>
-              <TableHead>Contact Info</TableHead>
-              <TableHead>Last Online</TableHead>
+              <TableHead>{t("colUser")}</TableHead>
+              <TableHead>{t("colStatus")}</TableHead>
+              <TableHead className="text-right">{t("colTraffic")}</TableHead>
+              <TableHead className="text-right">{t("colDevices")}</TableHead>
+              <TableHead>{t("colContact")}</TableHead>
+              <TableHead>{t("colLastOnline")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -387,7 +367,7 @@ export function RemnawaveUsersTable() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>{getStatusBadge(user.status)}</TableCell>
+                <TableCell>{getStatusBadge(user.status, statusLabels)}</TableCell>
                 <TableCell className="text-right">
                   <div className="space-y-1">
                     <div>{formatBytes(user.used_traffic_bytes)}</div>
@@ -431,7 +411,7 @@ export function RemnawaveUsersTable() {
                     {user.hwid_exceeds_limit && (
                       <Badge variant="destructive" className="text-xs">
                         <AlertTriangle className="h-3 w-3 mr-1" />
-                        Exceeded
+                        {t("exceeded")}
                       </Badge>
                     )}
                   </div>
@@ -460,12 +440,10 @@ export function RemnawaveUsersTable() {
                 <TableCell>
                   {user.online_at ? (
                     <div className="text-sm">
-                      {formatDistanceToNow(new Date(user.online_at), {
-                        addSuffix: true,
-                      })}
+                      {formatDistanceToNowRu(new Date(user.online_at))}
                     </div>
                   ) : (
-                    <span className="text-muted-foreground">Never</span>
+                    <span className="text-muted-foreground">{t("statNever")}</span>
                   )}
                   {user.last_connected_node && (
                     <div className="text-xs text-muted-foreground">
@@ -488,12 +466,15 @@ export function RemnawaveUsersTable() {
       </Card>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {filteredUsers.length > 0 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {t("page", { page, total: totalPages })}
-          </p>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {t("page", { page, total: totalPages })}
+            </p>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(1); }} />
+          </div>
+          {totalPages > 1 && <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -512,7 +493,7 @@ export function RemnawaveUsersTable() {
               {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </div>

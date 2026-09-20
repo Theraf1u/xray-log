@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,7 @@ export default function RemnavewavePage() {
       setOnlineStats(onlineData);
       setLastUpdate(new Date());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
+      setError(err instanceof Error ? err.message : t("fetchError"));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -174,90 +175,54 @@ export default function RemnavewavePage() {
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Online Now - Featured Card */}
-        <Card className="border-green-500/50 bg-green-500/5">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Wifi className="h-4 w-4 text-green-500" />
-              {t("onlineNow")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-green-500">
-              <AnimatedNumber value={onlineStats?.now ?? 0} />
-            </div>
-            <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
-              <span>{t("mins15")} <AnimatedNumber value={onlineStats?.recent ?? 0} /></span>
-              <span>•</span>
-              <span>{t("hour1")} <AnimatedNumber value={onlineStats?.lastHour ?? 0} /></span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              {t("totalUsers")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={stats?.totalUsers ?? 0} />
-            </div>
-            <div className="flex gap-2 mt-2">
-              <Badge variant="default" className="bg-green-500 text-xs">
-                Active: <AnimatedNumber value={stats?.activeUsers ?? 0} />
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Smartphone className="h-4 w-4 text-muted-foreground" />
-              {t("hwidDevices")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={stats?.hwidStats?.totalDevices ?? 0} />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t("unique")} <AnimatedNumber value={stats?.hwidStats?.uniqueUsers ?? 0} />
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Server className="h-4 w-4 text-muted-foreground" />
-              {t("platforms")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-1">
-              {stats?.hwidStats?.platformBreakdown ? (
-                Object.entries(stats.hwidStats.platformBreakdown)
-                  .sort(([,a], [,b]) => b - a)
-                  .slice(0, 3)
-                  .map(([platform, count]) => (
-                    <div key={platform} className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{platform || "Unknown"}</span>
-                      <span className="font-medium">{count}</span>
-                    </div>
-                  ))
-              ) : (
-                <span className="text-sm text-muted-foreground">{t("noData")}</span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Five bordered cards (one of them oversized as a "featured" card)
+          became one rail. Online-now keeps its colour via `tone` instead of a
+          differently-sized card that broke the row's rhythm. */}
+      <StatRail
+        columns={5}
+        items={[
+          {
+            key: "onlineNow",
+            label: t("onlineNow"),
+            value: onlineStats?.now ?? 0,
+            tone: "ok",
+            dot: (onlineStats?.now ?? 0) > 0 ? "ok" : undefined,
+            hint: `${t("mins15")} ${onlineStats?.recent ?? 0} · ${t("hour1")} ${onlineStats?.lastHour ?? 0}`,
+            motif: "pulse",
+          },
+          {
+            key: "totalUsers",
+            label: t("totalUsers"),
+            value: stats?.totalUsers ?? 0,
+            hint: `${t("activeShort")}: ${stats?.activeUsers ?? 0}`,
+            motif: "users",
+          },
+          {
+            key: "hwidDevices",
+            label: t("hwidDevices"),
+            value: stats?.hwidStats?.totalDevices ?? 0,
+            hint: `${t("unique")} ${stats?.hwidStats?.uniqueUsers ?? 0}`,
+            motif: "link",
+          },
+          {
+            key: "platforms",
+            label: t("platforms"),
+            value:
+              stats?.hwidStats?.platformBreakdown && Object.keys(stats.hwidStats.platformBreakdown).length > 0
+                ? Object.entries(stats.hwidStats.platformBreakdown).sort(([, a], [, b]) => b - a)[0][0] || t("unknownPlatform")
+                : t("noData"),
+            hint:
+              stats?.hwidStats?.platformBreakdown && Object.keys(stats.hwidStats.platformBreakdown).length > 1
+                ? Object.entries(stats.hwidStats.platformBreakdown)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(1, 3)
+                    .map(([platform, count]) => `${platform || t("unknownPlatform")}: ${count}`)
+                    .join(" · ")
+                : undefined,
+            motif: "globe",
+          },
+        ]}
+      />
 
       {/* Main Content */}
       <Tabs defaultValue="online" className="space-y-4">
@@ -293,29 +258,25 @@ export default function RemnavewavePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Online Stats Summary */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                  <div className="text-2xl font-bold text-green-500">{onlineStats?.now ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">{t("now5min")}</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold">{onlineStats?.recent ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">{t("last15min")}</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold">{onlineStats?.lastHour ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">{t("lastHour")}</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold">{onlineStats?.last24h ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">{t("last24h")}</div>
-                </div>
-                <div className="text-center p-3 bg-muted/50 rounded-lg">
-                  <div className="text-2xl font-bold text-muted-foreground">{onlineStats?.neverOnline ?? 0}</div>
-                  <div className="text-xs text-muted-foreground">{t("neverOnline")}</div>
-                </div>
-              </div>
+              {/* Same five figures as a rail instead of five centred blocks
+                  each spending its own rounded background. */}
+              <StatRail
+                columns={5}
+                className="mb-6"
+                items={[
+                  {
+                    key: "now5min",
+                    label: t("now5min"),
+                    value: onlineStats?.now ?? 0,
+                    tone: "ok",
+                    motif: "pulse",
+                  },
+                  { key: "last15min", label: t("last15min"), value: onlineStats?.recent ?? 0, motif: "stream" },
+                  { key: "lastHour", label: t("lastHour"), value: onlineStats?.lastHour ?? 0, motif: "database" },
+                  { key: "last24h", label: t("last24h"), value: onlineStats?.last24h ?? 0, motif: "globe" },
+                  { key: "neverOnline", label: t("neverOnline"), value: onlineStats?.neverOnline ?? 0, motif: "users" },
+                ]}
+              />
 
               {/* Online Users Table */}
               {onlineStats?.onlineUsers && onlineStats.onlineUsers.length > 0 ? (
@@ -394,20 +355,17 @@ export default function RemnavewavePage() {
         </TabsContent>
 
         <TabsContent value="users" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                {t("remnawaveUsers")}
-              </CardTitle>
-              <CardDescription>
-                {t("remnawaveUsersDesc")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <RemnawaveUsersTable />
-            </CardContent>
-          </Card>
+          {/* RemnawaveUsersTable brings its own stat rail, filters and table
+              surface; wrapping it in another Card nested a whole page inside
+              one card header. A plain heading carries the same context. */}
+          <div>
+            <h3 className="flex items-center gap-2 text-base font-semibold">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              {t("remnawaveUsers")}
+            </h3>
+            <p className="text-sm text-muted-foreground">{t("remnawaveUsersDesc")}</p>
+          </div>
+          <RemnawaveUsersTable />
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
@@ -449,19 +407,19 @@ export default function RemnavewavePage() {
               <CardContent>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <Badge variant="default" className="bg-green-500">ACTIVE</Badge>
+                    <Badge variant="default" className="bg-green-500">{t("statusActive")}</Badge>
                     <span className="font-medium">{stats?.activeUsers ?? 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <Badge variant="secondary">DISABLED</Badge>
+                    <Badge variant="secondary">{t("statusDisabled")}</Badge>
                     <span className="font-medium">{stats?.disabledUsers ?? 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <Badge variant="default" className="bg-orange-500">LIMITED</Badge>
+                    <Badge variant="default" className="bg-orange-500">{t("statusLimited")}</Badge>
                     <span className="font-medium">{stats?.limitedUsers ?? 0}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <Badge variant="destructive">EXPIRED</Badge>
+                    <Badge variant="destructive">{t("statusExpired")}</Badge>
                     <span className="font-medium">{stats?.expiredUsers ?? 0}</span>
                   </div>
                 </div>

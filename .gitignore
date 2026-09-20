@@ -40,3 +40,40 @@ server/data/*.db-wal
 .env
 .env.agent
 .vscode/
+
+# Deploy scratch files -- one-off build/status artifacts generated on the
+# server during ad-hoc rebuilds, never meant to be versioned.
+*.log
+*-build.done
+*-build.exit
+*-build.status
+*-build.result
+build.pid
+build.success
+final-build.success
+.env.bak-*
+source.tar.gz
+target-node.json
+upstream-checksums.json
+backups/
+docker-compose.override.yml
+
+# One-off scratch scripts from ad-hoc deploy sessions (not reusable project
+# tooling -- that lives in scripts/).
+/api-check.py
+/build-retry.py
+/build.sh
+/chat-update.py
+/db-move.result
+/db-move.status
+/enable-node-log.py
+/final-build.py
+/final-build.sh
+/inspect-services.py
+/launch-next.py
+/move-postgres-to-sdb.sh
+/npm-setup.mjs
+/prepare-mihomo.py
+/pull-images.py
+/start-build.py
+/verify-deployment.py

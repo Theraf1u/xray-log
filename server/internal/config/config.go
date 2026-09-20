@@ -28,6 +28,10 @@ type Config struct {
 	TelegramEnabled bool
 	TelegramToken   string
 	TelegramChatID  string
+	// TelegramTopicID is the optional forum "message_thread_id" — set only
+	// when the target chat is a forum-mode supergroup and alerts should land
+	// in one specific topic rather than General.
+	TelegramTopicID string
 
 	// Thresholds
 	SuspiciousRequestCount int           // Requests to blacklisted sites to trigger alert
@@ -91,6 +95,7 @@ func Load() *Config {
 		TelegramEnabled:        getBoolEnv("TELEGRAM_ENABLED", false),
 		TelegramToken:          getEnv("TELEGRAM_TOKEN", ""),
 		TelegramChatID:         getEnv("TELEGRAM_CHAT_ID", ""),
+		TelegramTopicID:        getEnv("TELEGRAM_TOPIC_ID", ""),
 		SuspiciousRequestCount: getIntEnv("SUSPICIOUS_REQUEST_COUNT", 5),
 		SuspiciousTimeWindow:   getDurationEnv("SUSPICIOUS_TIME_WINDOW", 1*time.Hour),
 		RemnawaveEnabled:       getBoolEnv("REMNAWAVE_ENABLED", false),

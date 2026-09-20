@@ -3,8 +3,11 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { HourlyStats } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 
 interface ActivityHeatmapProps {
+  className?: string;
   data: HourlyStats[];
   title?: string;
   description?: string;
@@ -33,7 +36,9 @@ function getBlacklistColor(value: number, max: number): string {
   return "bg-red-500";
 }
 
-export function ActivityHeatmap({ data, title = "Activity Heatmap", description }: ActivityHeatmapProps) {
+export function ActivityHeatmap({ data, title, description, className }: ActivityHeatmapProps) {
+  const t = useTranslations("activityHeatmap");
+  const heading = title ?? t("title");
   const { hourlyData, maxRequests, maxBlacklist } = useMemo(() => {
     // Group by hour of day (0-23)
     const hourlyMap = new Map<number, { requests: number; blacklist: number; count: number }>();
@@ -71,9 +76,9 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
   };
 
   return (
-    <Card>
+    <Card className={cn(className)}>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium">{heading}</CardTitle>
         {description && (
           <CardDescription className="text-xs">{description}</CardDescription>
         )}
@@ -82,16 +87,16 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
         {/* Requests heatmap */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-muted-foreground">Requests by Hour</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("requestsByHour")}</span>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span>Low</span>
+              <span>{t("low")}</span>
               <div className="flex gap-0.5">
                 <div className="w-3 h-3 rounded-sm bg-green-500/30" />
                 <div className="w-3 h-3 rounded-sm bg-green-500/50" />
                 <div className="w-3 h-3 rounded-sm bg-green-500/70" />
                 <div className="w-3 h-3 rounded-sm bg-green-500" />
               </div>
-              <span>High</span>
+              <span>{t("high")}</span>
             </div>
           </div>
           <div className="grid grid-cols-8 sm:grid-cols-12 md:grid-cols-24 gap-1">
@@ -99,7 +104,7 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
               <div
                 key={`req-${item.hour}`}
                 className={`aspect-square rounded-sm ${getHeatColor(item.requests, maxRequests)} transition-colors cursor-default`}
-                title={`${formatHour(item.hour)}: ${item.requests.toLocaleString()} requests`}
+                title={`${formatHour(item.hour)}: ${t("requestsTooltip", { count: item.requests.toLocaleString() })}`}
               />
             ))}
           </div>
@@ -115,16 +120,16 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
         {/* Blacklist heatmap */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-muted-foreground">Blacklist Hits by Hour</span>
+            <span className="text-xs font-medium text-muted-foreground">{t("blacklistByHour")}</span>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <span>Low</span>
+              <span>{t("low")}</span>
               <div className="flex gap-0.5">
                 <div className="w-3 h-3 rounded-sm bg-red-500/30" />
                 <div className="w-3 h-3 rounded-sm bg-red-500/50" />
                 <div className="w-3 h-3 rounded-sm bg-red-500/70" />
                 <div className="w-3 h-3 rounded-sm bg-red-500" />
               </div>
-              <span>High</span>
+              <span>{t("high")}</span>
             </div>
           </div>
           <div className="grid grid-cols-8 sm:grid-cols-12 md:grid-cols-24 gap-1">
@@ -132,7 +137,7 @@ export function ActivityHeatmap({ data, title = "Activity Heatmap", description 
               <div
                 key={`bl-${item.hour}`}
                 className={`aspect-square rounded-sm ${getBlacklistColor(item.blacklist, maxBlacklist)} transition-colors cursor-default`}
-                title={`${formatHour(item.hour)}: ${item.blacklist.toLocaleString()} blacklist hits`}
+                title={`${formatHour(item.hour)}: ${t("blacklistTooltip", { count: item.blacklist.toLocaleString() })}`}
               />
             ))}
           </div>

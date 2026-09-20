@@ -1,5 +1,6 @@
 "use client";
 
+import { formatRu } from "@/lib/utils/date";
 import { useState, useMemo, useEffect } from "react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -22,9 +23,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ThreatMatch, ThreatType } from "@/lib/types";
-import { format } from "date-fns";
+
 import Link from "next/link";
 import { threatTypeConfig, sourceLabels } from "./config";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface MatchesTableProps {
@@ -34,13 +36,14 @@ interface MatchesTableProps {
 }
 
 export function MatchesTable({ matches: matchesProp, title, description }: MatchesTableProps) {
+  const mt = useTranslations("matchesTable");
   const t = useTranslations("threatIntel");
   const matches = matchesProp || [];
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
-  const pageSize = 20;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   // Get unique threat types from matches - must be before any conditional returns
   const threatTypes = useMemo(() => {
@@ -150,7 +153,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
             </Select>
             <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
               <SelectTrigger className="w-[130px] h-9">
-                <SelectValue placeholder="Confidence" />
+                <SelectValue placeholder={mt("confidence")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("confidenceAll")}</SelectItem>
@@ -166,12 +169,12 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="whitespace-nowrap hidden sm:table-cell">Time</TableHead>
-              <TableHead className="whitespace-nowrap">Type</TableHead>
-              <TableHead className="whitespace-nowrap">User</TableHead>
-              <TableHead className="whitespace-nowrap hidden md:table-cell">Destination</TableHead>
-              <TableHead className="whitespace-nowrap hidden lg:table-cell">Source</TableHead>
-              <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">Conf</TableHead>
+              <TableHead className="whitespace-nowrap hidden sm:table-cell">{mt("time")}</TableHead>
+              <TableHead className="whitespace-nowrap">{mt("type")}</TableHead>
+              <TableHead className="whitespace-nowrap">{mt("user")}</TableHead>
+              <TableHead className="whitespace-nowrap hidden md:table-cell">{mt("destination")}</TableHead>
+              <TableHead className="whitespace-nowrap hidden lg:table-cell">{mt("source")}</TableHead>
+              <TableHead className="text-right whitespace-nowrap hidden sm:table-cell">{mt("confShort")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -180,7 +183,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
               return (
                 <TableRow key={match.id}>
                   <TableCell className="text-muted-foreground whitespace-nowrap hidden sm:table-cell">
-                    {format(new Date(match.matched_at), "HH:mm")}
+                    {formatRu(new Date(match.matched_at), "HH:mm")}
                   </TableCell>
                   <TableCell>
                     <Badge className={`${config.color} text-white text-xs`}>
@@ -223,12 +226,15 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
       </CardContent>
       
       {/* Pagination */}
-      {totalPages > 1 && (
+      {filteredMatches.length > 0 && (
         <div className="flex items-center justify-between p-4 pt-2 border-t">
-          <p className="text-sm text-muted-foreground">
-            {t("page", { page, total: totalPages })}
-          </p>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {t("page", { page, total: totalPages })}
+            </p>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(1); }} />
+          </div>
+          {totalPages > 1 && <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -247,7 +253,7 @@ export function MatchesTable({ matches: matchesProp, title, description }: Match
               {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </Card>

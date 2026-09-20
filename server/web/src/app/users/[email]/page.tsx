@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { ArrowLeft, User, Activity, ShieldAlert, Globe, Wifi, AlertTriangle, Gauge } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
 import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
@@ -236,7 +236,7 @@ export default function UserDetailsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm hidden md:table-cell whitespace-nowrap">
                     {isValidDate(node.last_seen)
-                      ? formatDistanceToNow(new Date(node.last_seen), { addSuffix: true })
+                      ? formatDistanceToNowRu(new Date(node.last_seen))
                       : "—"
                     }
                   </TableCell>

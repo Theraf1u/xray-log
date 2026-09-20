@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useTranslations } from "next-intl";
 import Map, { Source, Layer, Popup } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
 import type { FeatureCollection, Point } from "geojson";
@@ -114,7 +115,9 @@ function getFlag(countryCode: string): string {
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-export function GeoMap({ data, cityData = [], title = "Geographic Distribution", mode = "cities" }: GeoMapProps) {
+export function GeoMap({ data, cityData = [], title, mode = "cities" }: GeoMapProps) {
+  const gm = useTranslations("geoMap");
+  const heading = title ?? gm("title");
   const mapRef = useRef<MapRef>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [popupInfo, setPopupInfo] = useState<{
@@ -146,6 +149,19 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
       }, 100);
     }
   }, [isFullscreen]);
+
+  // The map container is no longer a fixed 300px — it grows with its row. Mapbox
+  // does not notice CSS-driven size changes on its own, so it kept painting at
+  // the size it was created with and the globe ended up sitting low in the
+  // panel instead of centred.
+  const mapBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = mapBoxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => mapRef.current?.resize());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Convert city data to GeoJSON (uses actual coordinates)
   const cityGeojson = useMemo((): FeatureCollection<Point> => {
@@ -266,13 +282,13 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Globe className="h-4 w-4 text-blue-500" />
-            {title}
+            {heading}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-6 text-muted-foreground">
             <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">Mapbox API key not configured</p>
+            <p className="text-sm">{gm("noKey")}</p>
             <p className="text-xs mt-1">Set NEXT_PUBLIC_MAPBOX_TOKEN in environment</p>
           </div>
         </CardContent>
@@ -286,13 +302,13 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Globe className="h-4 w-4 text-blue-500" />
-            {title}
+            {heading}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-6 text-muted-foreground">
             <Globe className="h-8 w-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No geographic data available</p>
+            <p className="text-sm">{gm("empty")}</p>
           </div>
         </CardContent>
       </Card>
@@ -307,7 +323,7 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
           <div className="absolute top-4 left-4 z-10 flex items-center gap-4">
             <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm rounded-lg px-3 py-2">
               <Globe className="h-5 w-5 text-blue-500" />
-              <span className="font-medium">{title}</span>
+              <span className="font-medium">{heading}</span>
               <span className="text-muted-foreground text-sm">
                 {mode === "cities" && cityData.length > 0 
                   ? `${cityData.length} cities • ${totalCount.toLocaleString()} connections`
@@ -368,15 +384,15 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
                   </div>
                   <div className="text-sm space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-zinc-400">Connections:</span>
+                      <span className="text-zinc-400">{gm("connections")}</span>
                       <span className="font-mono text-white">{popupInfo.count.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-zinc-400">Users:</span>
+                      <span className="text-zinc-400">{gm("users")}</span>
                       <span className="font-mono text-white">{popupInfo.users.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-zinc-400">Share:</span>
+                      <span className="text-zinc-400">{gm("share")}</span>
                       <span className="font-mono text-white">
                         {((popupInfo.count / totalCount) * 100).toFixed(1)}%
                       </span>
@@ -396,14 +412,14 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                <span>High</span>
+                <span>{gm("high")}</span>
               </div>
             </div>
           </div>
 
           {/* Top locations in fullscreen - sidebar */}
           <div className="absolute bottom-4 right-4 bg-background/90 backdrop-blur-sm rounded-lg p-3 max-w-[250px] max-h-[300px] overflow-y-auto scrollbar-thin">
-            <h4 className="text-sm font-medium mb-2">Top Locations</h4>
+            <h4 className="text-sm font-medium mb-2">{gm("topLocations")}</h4>
             <div className="space-y-2">
               {mode === "cities" && cityData.length > 0
                 ? cityData.slice(0, 10).map((item, idx) => (
@@ -436,14 +452,14 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Globe className="h-4 w-4 text-blue-500" />
-              {title}
+              {heading}
             </CardTitle>
             <Button
               variant="ghost"
               size="icon"
               className="h-6 w-6"
               onClick={() => setIsFullscreen(true)}
-              title="Fullscreen"
+              title={gm("fullscreen")}
             >
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
@@ -455,8 +471,12 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
             }
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="h-[300px] relative">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">
+          {/* Inset, with the same corner radius as every other nested
+              element. Flush to the card edges it read as a square hole
+              punched through a rounded panel, and pinned at 300px it left the
+              rest of the card empty. */}
+          <div ref={mapBoxRef} className="relative mx-5 min-h-[240px] flex-1 overflow-hidden rounded-[var(--radius)]">
             <Map
               ref={isFullscreen ? undefined : mapRef}
               mapboxAccessToken={MAPBOX_TOKEN}
@@ -501,15 +521,15 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
                     </div>
                     <div className="text-sm space-y-1">
                       <div className="flex justify-between">
-                        <span className="text-zinc-400">Connections:</span>
+                        <span className="text-zinc-400">{gm("connections")}</span>
                         <span className="font-mono text-white">{popupInfo.count.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-zinc-400">Users:</span>
+                        <span className="text-zinc-400">{gm("users")}</span>
                         <span className="font-mono text-white">{popupInfo.users.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-zinc-400">Share:</span>
+                        <span className="text-zinc-400">{gm("share")}</span>
                         <span className="font-mono text-white">
                           {((popupInfo.count / totalCount) * 100).toFixed(1)}%
                         </span>
@@ -529,14 +549,17 @@ export function GeoMap({ data, cityData = [], title = "Geographic Distribution",
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded-full bg-red-500/80" />
-                  <span>High</span>
+                  <span>{gm("high")}</span>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Top locations list */}
-          <div className="p-3 border-t max-h-[150px] overflow-y-auto scrollbar-thin">
+          <div
+            className="max-h-[150px] shrink-0 overflow-y-auto scrollbar-thin border-t px-5 py-3"
+            style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+          >
             <div className="grid grid-cols-2 gap-2">
               {mode === "cities" && cityData.length > 0
                 ? cityData.slice(0, 6).map((item, idx) => (

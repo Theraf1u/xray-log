@@ -107,6 +107,30 @@ CREATE INDEX IF NOT EXISTS blacklist_matches_node_idx  ON blacklist_matches (nod
 
 CREATE TABLE IF NOT EXISTS blacklist_matches_default PARTITION OF blacklist_matches DEFAULT;
 
+-- request_events: immutable per-request chronology used only by the Export UI.
+-- This deliberately lives beside (and does not replace) the existing aggregate
+-- tables. Daily partitions make 30-day retention cheap and predictable.
+CREATE TABLE IF NOT EXISTS request_events (
+    id           bigint        GENERATED ALWAYS AS IDENTITY,
+    node_id      smallint      NOT NULL REFERENCES nodes(id),
+    user_email   uuid          NOT NULL,
+    source_ip    inet,
+    source_port  integer,
+    protocol     text,
+    destination  text          NOT NULL,
+    inbound      text,
+    outbound     text,
+    status       text,
+    ts           timestamptz   NOT NULL,
+    PRIMARY KEY (id, ts)
+) PARTITION BY RANGE (ts);
+
+CREATE INDEX IF NOT EXISTS request_events_ts_brin  ON request_events USING BRIN (ts);
+CREATE INDEX IF NOT EXISTS request_events_user_ts  ON request_events (user_email, ts DESC);
+CREATE INDEX IF NOT EXISTS request_events_node_ts  ON request_events (node_id, ts DESC);
+
+CREATE TABLE IF NOT EXISTS request_events_default PARTITION OF request_events DEFAULT;
+
 -- threat_matches
 CREATE TABLE IF NOT EXISTS threat_matches (
     id          bigint        GENERATED ALWAYS AS IDENTITY,
@@ -688,3 +712,28 @@ CREATE TABLE IF NOT EXISTS email_index (
 -- =============================================================================
 
 INSERT INTO threat_stats_agg (id, total_matches) VALUES (1, 0) ON CONFLICT DO NOTHING;
+
+-- =============================================================================
+-- app_settings: live-editable integration credentials and intervals.
+--
+-- A single-row table (id is pinned to 1 by the CHECK constraint) rather than
+-- a key-value table: the settings this covers are a small fixed set known at
+-- compile time, so typed columns catch a wrong type at the call site instead
+-- of at read time. config.Load() reads env vars as the bootstrap default; a
+-- row here, once written by the admin panel, overrides them on every
+-- subsequent boot and can also be applied live without a restart.
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    id                               smallint    PRIMARY KEY DEFAULT 1,
+    remnawave_enabled                boolean     NOT NULL DEFAULT false,
+    remnawave_url                    text        NOT NULL DEFAULT '',
+    remnawave_api_token              text        NOT NULL DEFAULT '',
+    remnawave_sync_interval_seconds  integer     NOT NULL DEFAULT 60,
+    telegram_enabled                 boolean     NOT NULL DEFAULT false,
+    telegram_token                   text        NOT NULL DEFAULT '',
+    telegram_chat_id                 text        NOT NULL DEFAULT '',
+    telegram_topic_id                text        NOT NULL DEFAULT '',
+    updated_at                       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT app_settings_singleton CHECK (id = 1)
+);

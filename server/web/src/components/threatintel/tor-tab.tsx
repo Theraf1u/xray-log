@@ -10,6 +10,8 @@ import { ThreatMatch, FeedStatus, CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
 import { MatchesTable } from "./matches-table";
 import { useTranslations } from "next-intl";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
+import { StatRail } from "@/components/ui/stat-rail";
 
 interface TorTabProps {
   topUsers: CategoryUserStats[];
@@ -34,7 +36,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
   const [totalUsers, setTotalUsers] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [usersLoading, setUsersLoading] = useState(true);
-  const pageSize = 12;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   // Fetch paginated users
   const fetchUsers = useCallback(async (page: number) => {
@@ -58,7 +60,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [pageSize]);
 
   // Fetch tor matches on mount
   const fetchMatches = useCallback(async () => {
@@ -94,45 +96,34 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
   
   return (
     <div className="space-y-6">
-      {/* Tor Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Globe className="h-4 w-4 text-violet-600" />
-              Tor Detections
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-violet-600">
-              {totalDetections.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">On current page</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {uniqueUsers}
-            </div>
-            <p className="text-xs text-muted-foreground">Using Tor (all time)</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Exit Nodes Loaded</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalIndicators.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">IPs & domains</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Three bordered cards became one rail. */}
+      <StatRail
+        columns={3}
+        items={[
+          {
+            key: "detections",
+            label: t("torDetections"),
+            value: totalDetections,
+            hint: t("onCurrentPage"),
+            tone: "bad",
+            motif: "shield",
+          },
+          {
+            key: "uniqueUsers",
+            label: t("uniqueUsersLabel"),
+            value: uniqueUsers,
+            hint: t("usingTorAllTime"),
+            motif: "users",
+          },
+          {
+            key: "exitNodes",
+            label: t("exitNodesLoaded"),
+            value: totalIndicators,
+            hint: t("ipsAndDomains"),
+            motif: "globe",
+          },
+        ]}
+      />
 
       {/* Top Tor Users with Pagination */}
       <Card>
@@ -141,14 +132,15 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Globe className="h-5 w-5 text-violet-600" />
-                Tor Users
+                {t("torUsers")}
               </CardTitle>
               <CardDescription>
-                {totalUsers > 0 ? `${totalUsers} users with Tor network activity` : 'Users with Tor network activity'}
+                {totalUsers > 0 ? t("torUsersCount", { count: totalUsers }) : t("torUsersActivity")}
               </CardDescription>
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setCurrentPage(1); }} disabled={usersLoading} />
+              {totalPages > 1 && <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -168,8 +160,8 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-              </div>
-            )}
+              </div>}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -197,7 +189,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
                       {user.username || user.user_email}
                     </Link>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="secondary">{user.match_count} hits</Badge>
+                      <Badge variant="secondary">{t("hitsCount", { count: user.match_count })}</Badge>
                     </div>
                     {user.domains && user.domains.length > 0 && (
                       <div className="mt-2 text-xs text-muted-foreground">
@@ -206,7 +198,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
                             {d}{i < Math.min(user.domains.length, 3) - 1 ? ", " : ""}
                           </span>
                         ))}
-                        {user.domains.length > 3 && <span> +{user.domains.length - 3} more</span>}
+                        {user.domains.length > 3 && <span> {t("moreCount", { count: user.domains.length - 3 })}</span>}
                       </div>
                     )}
                   </div>
@@ -215,7 +207,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No Tor users detected yet
+              {t("noTorUsersYet")}
             </div>
           )}
         </CardContent>
@@ -224,7 +216,7 @@ export function TorTab({ topUsers, feeds }: TorTabProps) {
       {/* Tor Matches Table */}
       <MatchesTable 
         matches={matches} 
-        title="Recent Tor Activity"
+        title={t("recentTorActivity")}
         description={t("noRecentActivity")}
       />
     </div>

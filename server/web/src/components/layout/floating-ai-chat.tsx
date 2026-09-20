@@ -22,6 +22,7 @@ import {
   Maximize2,
   Minimize2,
   MessageSquare,
+  EyeOff,
   Trash2,
   Plus,
   History,
@@ -35,6 +36,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+import { useAiChatVisibility } from "@/lib/ai-chat-visibility";
 
 // Thinking actions icon sequence (texts resolved via translations in ThinkingIndicator)
 const thinkingIcons = [Database, Search, Users, BarChart3, Shield, Globe, Database];
@@ -100,6 +102,8 @@ type ChatView = "chat" | "history";
 
 export function FloatingAIChat() {
   const t = useTranslations("floatingAiChat");
+  const tTiles = useTranslations("serviceTiles");
+  const { hidden: aiHidden, setHidden: setAiHidden } = useAiChatVisibility();
   const [isOpen, setIsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [view, setView] = useState<ChatView>("chat");
@@ -480,6 +484,12 @@ export function FloatingAIChat() {
   // On mobile, always fullscreen
   const effectiveFullscreen = isFullscreen || isMobile;
 
+  // Hidden by preference: the header keeps a toggle to bring it back, so this
+  // never strands the assistant out of reach.
+  if (aiHidden) {
+    return null;
+  }
+
   if (!isOpen) {
     return (
       <Button
@@ -538,6 +548,18 @@ export function FloatingAIChat() {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title={tTiles("hideAiChat")}
+            onClick={() => {
+              setIsOpen(false);
+              setAiHidden(true);
+            }}
+          >
+            <EyeOff className="h-4 w-4" />
+          </Button>
           {view === "chat" && (
             <>
               <Button

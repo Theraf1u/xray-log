@@ -4,37 +4,35 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { authFetch } from "@/contexts/auth-context";
 import { useWebSocket, useWsThreatIntel } from "@/contexts/websocket-context";
 import { useThreatIntelData } from "@/hooks/use-threat-intel-data";
-import { StatsCards } from "@/components/dashboard/stats-cards";
+import { VitalsRail } from "@/components/dashboard/vitals-rail";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { AnomaliesCard } from "@/components/dashboard/anomalies-card";
 import { RecentBlocks } from "@/components/dashboard/recent-blocks";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { ThreatIntelCard } from "@/components/threatintel/threat-intel-card";
-import { QuickActions } from "@/components/dashboard/quick-actions";
-import { SystemHealth } from "@/components/dashboard/system-health";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
 import { GeoMap, CityData } from "@/components/dashboard/geo-map";
 import { TopOffenders } from "@/components/dashboard/top-offenders";
 import { RealTimeFeed, FeedEvent, EventType } from "@/components/dashboard/real-time-feed";
 import { TrafficDistribution } from "@/components/dashboard/traffic-distribution";
-import { PeriodComparison } from "@/components/dashboard/period-comparison";
 import { AlertsSummary, Alert } from "@/components/dashboard/alerts-summary";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { Wifi, WifiOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, ShieldAlert, Download } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BlacklistMatchInfo, StatsAnomaly } from "@/lib/types";
 
 export default function DashboardPage() {
   const t = useTranslations();
   const tThreat = useTranslations("threatIntel");
-  const { stats, nodes, hourly, anomalies, blacklist, connected, loading } = useWebSocket();
+  const tQuick = useTranslations("quickActions");
+  const { stats, nodes, hourly, anomalies, blacklist, loading } = useWebSocket();
   const { threatIntel } = useWsThreatIntel();
   // HTTP-polled copy as a fallback: WS may take up to 10s to push the first
   // threatintel frame after (re)connect, and the feed loader itself can be
   // slow on cold start. The HTTP endpoint reads the same stats and
-  // guarantees SystemHealth sees live numbers within a refresh interval.
+  // guarantees the threat-intel views see live numbers within a refresh interval.
   const { stats: tiStatsHTTP } = useThreatIntelData();
   
   // State for additional data
@@ -125,7 +123,17 @@ export default function DashboardPage() {
       if (remna) {
         setRemnawaveEnabled(remna.enabled ?? false);
         if (remna.enabled) {
-          setRemnawaveStatus(remna.totalUsers > 0 ? "online" : "offline");
+          // Trust the server's own health verdict. The old check was
+          // `totalUsers > 0`, which reported the panel as offline for the whole
+          // first sync after every restart, when the cache is simply not filled
+          // yet. "loading" maps to "unknown" so the tile shows "Проверка...".
+          setRemnawaveStatus(
+            remna.status === "online"
+              ? "online"
+              : remna.status === "loading"
+                ? "unknown"
+                : "offline"
+          );
           setRemnawaveLastSync(remna.lastSync);
         } else {
           setRemnawaveStatus("offline");
@@ -299,26 +307,6 @@ export default function DashboardPage() {
     setAlerts(prev => prev.map(a => ({ ...a, read: true })));
   }, []);
 
-  // Calculate period comparison stats (mock previous day as 90% of current for demo)
-  const periodStats = useMemo(() => ({
-    requests: { 
-      current: stats.total_requests, 
-      previous: Math.round(stats.total_requests * 0.85) 
-    },
-    blacklistHits: { 
-      current: stats.total_blacklist, 
-      previous: Math.round(stats.total_blacklist * 1.1) 
-    },
-    uniqueUsers: { 
-      current: stats.total_unique_users, 
-      previous: Math.round(stats.total_unique_users * 0.95) 
-    },
-    onlineUsers: { 
-      current: stats.online_users, 
-      previous: Math.round(stats.online_users * 0.9) 
-    },
-  }), [stats]);
-
   // Filter only online nodes for dashboard
   const onlineNodes = useMemo(() => nodes.filter(n => n.is_connected), [nodes]);
 
@@ -342,37 +330,36 @@ export default function DashboardPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* Title rail.
+          The old header carried a Live/Disconnected badge that now duplicates
+          the WebSocket tile in the global header, so it is gone. The three
+          Quick Actions that used to occupy a whole card in row 2 sit here
+          instead: same reach, one container less, and no heading repeating
+          the word "actions" above buttons that already say what they do. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("dashboard.title")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("dashboard.description")}
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{t("dashboard.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("dashboard.description")}</p>
         </div>
-        <Badge 
-          variant={connected ? "default" : "destructive"} 
-          className="flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          {connected ? (
-            <>
-              <Wifi className="h-3 w-3" />
-              {t("common.live")}
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3 w-3" />
-              {t("common.disconnected")}
-            </>
-          )}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleSyncRemnawave}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            {tQuick("syncRemnawave")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRefreshBlacklist}>
+            <ShieldAlert className="mr-1.5 h-3.5 w-3.5" />
+            {tQuick("refreshBlacklist")}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleExportReport}>
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            {tQuick("exportReport")}
+          </Button>
+        </div>
       </div>
 
-      {/* Stats Cards — prefer live WS state, but fall back to HTTP so the
-          dashboard keeps showing numbers even if the broadcast is stalled.
-          Each field is picked independently so a partial WS update still
-          shows the freshest value available. */}
-      <StatsCards
+      {/* Vital signs: five stat cards + the period-comparison card collapsed
+          into one instrument. */}
+      <VitalsRail
         stats={{
           total_requests: stats?.total_requests || statsHTTP?.total_requests || 0,
           total_blacklist: stats?.total_blacklist || statsHTTP?.total_blacklist || 0,
@@ -383,58 +370,49 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* Row 2: Quick Actions + System Health + Period Comparison + Alerts */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        <QuickActions 
-          onSyncRemnawave={handleSyncRemnawave}
-          onRefreshBlacklist={handleRefreshBlacklist}
-          onExportReport={handleExportReport}
-          problemUsersCount={topOffenders.filter(u => (u.risk_score || 0) >= 50).length}
-        />
-        <SystemHealth 
-          remnawaveStatus={remnawaveStatus}
-          remnawaveEnabled={remnawaveEnabled}
-          remnawaveLastSync={remnawaveLastSync}
-          threatIntelIndicators={threatIntel.stats?.total_indicators ?? tiStatsHTTP?.total_indicators ?? null}
-          threatIntelLastUpdate={threatIntel.stats?.last_updated ?? tiStatsHTTP?.last_updated}
-          websocketConnected={connected}
-        />
-        <PeriodComparison stats={periodStats} periodLabel={t("dashboard.vsYesterday")} />
-        <AlertsSummary 
-          alerts={alerts}
-          onMarkRead={handleMarkAlertRead}
-          onMarkAllRead={handleMarkAllAlertsRead}
-        />
-      </div>
-
       {/* Row 3: Activity Chart + Anomalies */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ActivityChart
-            data={hourly}
-            onlineHistory={onlineHistory}
-            title={t("dashboard.activityTitle")}
-            description={t("dashboard.activityDesc")}
-            loading={false}
-            timeRange="24h"
+      {/* One row, one height. Every card fills it and scrolls internally,
+          so the plot grows into the space instead of leaving the black void
+          the stretched card used to produce. */}
+      <div className="grid grid-cols-1 gap-4 lg:h-[30rem] lg:grid-cols-3">
+        <ActivityChart
+          className="lg:col-span-2 h-[22rem] lg:h-full"
+          data={hourly}
+          onlineHistory={onlineHistory}
+          title={t("dashboard.activityTitle")}
+          description={t("dashboard.activityDesc")}
+          loading={false}
+          timeRange="24h"
+        />
+        <div className="grid min-h-0 gap-4 lg:grid-rows-2">
+          <AnomaliesCard className="min-h-0" anomalies={anomalies} loading={false} />
+          <AlertsSummary
+            className="min-h-0"
+            alerts={alerts}
+            onMarkRead={handleMarkAlertRead}
+            onMarkAllRead={handleMarkAllAlertsRead}
           />
         </div>
-        <AnomaliesCard anomalies={anomalies} loading={false} />
       </div>
 
       {/* Row 4: Heatmap + Traffic Distribution + Top Offenders */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-        <ActivityHeatmap
-          data={hourly}
-          title={t("activityHeatmap.title")}
-          description={t("activityHeatmap.description")}
-        />
-        <TrafficDistribution nodes={nodes} title={t("trafficDistribution.title")} />
-        <TopOffenders users={topOffenders} title={t("topOffenders.title")} />
+      {/* The heatmap is 24 columns wide and two rows tall — wide and short by
+          nature. Boxed into a third of the row it left a tall gap beneath it
+          and squeezed its own cells, so it gets the full width and the two
+          genuinely tall cards share an equal-height row below. */}
+      <ActivityHeatmap
+        data={hourly}
+        title={t("activityHeatmap.title")}
+        description={t("activityHeatmap.description")}
+      />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:h-[24rem]">
+        <TrafficDistribution className="min-h-0" nodes={nodes} title={t("trafficDistribution.title")} />
+        <TopOffenders className="min-h-0" users={topOffenders} title={t("topOffenders.title")} />
       </div>
 
       {/* Row 5: Geo Distribution (larger) + Real-time Feed */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 md:grid-rows-[620px]">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:h-[34rem]">
         <GeoMap data={geoData} cityData={cityData} title={t("geoMap.title")} mode="cities" />
         <RealTimeFeed events={feedEvents} title={t("realTimeFeed.title")} />
       </div>
@@ -445,7 +423,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Row 7: Nodes + Blacklist Alerts */}
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+      <div className="grid items-start gap-4 grid-cols-1 md:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader className="pb-3">
             <CardTitle>{t("dashboard.activeNodes")}</CardTitle>

@@ -1,29 +1,38 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { NodeStats } from "@/lib/types";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import { cn } from "@/lib/utils";
 
 interface TrafficDistributionProps {
+  className?: string;
   nodes: NodeStats[];
   title?: string;
 }
 
+// A single hue stepped by lightness, ordered largest share first.
+// Sixteen saturated hues made the ring read as decoration rather than data:
+// nothing about "purple" says it is bigger than "teal", so the eye had to
+// go to the legend for every slice anyway.
 const COLORS = [
-  "hsl(262, 83%, 58%)", // purple
-  "hsl(142, 71%, 45%)", // green
-  "hsl(38, 92%, 50%)",  // orange
-  "hsl(199, 89%, 48%)", // blue
-  "hsl(340, 82%, 52%)", // pink
-  "hsl(172, 66%, 50%)", // teal
-  "hsl(291, 64%, 42%)", // violet
-  "hsl(25, 95%, 53%)",  // red-orange
-  "hsl(221, 83%, 53%)", // indigo
-  "hsl(47, 96%, 53%)",  // yellow
+  "hsl(213, 94%, 74%)",
+  "hsl(213, 90%, 66%)",
+  "hsl(213, 86%, 58%)",
+  "hsl(213, 80%, 50%)",
+  "hsl(213, 74%, 43%)",
+  "hsl(213, 68%, 36%)",
+  "hsl(213, 60%, 30%)",
+  "hsl(213, 52%, 25%)",
+  "hsl(213, 44%, 21%)",
+  "hsl(213, 36%, 18%)",
 ];
 
-export function TrafficDistribution({ nodes, title = "Traffic by Node" }: TrafficDistributionProps) {
+export function TrafficDistribution({ nodes, title, className }: TrafficDistributionProps) {
+  const td = useTranslations("trafficDistribution");
+  const heading = title ?? td("title");
   const chartData = useMemo(() => {
     if (!nodes || nodes.length === 0) return [];
     return nodes
@@ -42,13 +51,13 @@ export function TrafficDistribution({ nodes, title = "Traffic by Node" }: Traffi
 
   if (chartData.length === 0) {
     return (
-      <Card>
+      <Card className={cn(className)}>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          <CardTitle className="text-sm font-medium">{heading}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">No traffic data available</p>
+            <p className="text-sm">{td("empty")}</p>
           </div>
         </CardContent>
       </Card>
@@ -69,10 +78,10 @@ export function TrafficDistribution({ nodes, title = "Traffic by Node" }: Traffi
             {data.name}
           </p>
           <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-            <p>Requests: <span className="text-foreground font-medium">{data.value.toLocaleString()}</span> ({percentage}%)</p>
-            <p>Blacklist: <span className="text-foreground font-medium">{data.blacklist.toLocaleString()}</span></p>
-            <p>Users: <span className="text-foreground font-medium">{data.users.toLocaleString()}</span></p>
-            <p>Status: <span className={data.online ? "text-green-500" : "text-red-500"}>{data.online ? "Online" : "Offline"}</span></p>
+            <p>{td("requests")} <span className="text-foreground font-medium">{data.value.toLocaleString()}</span> ({percentage}%)</p>
+            <p>{td("blacklist")} <span className="text-foreground font-medium">{data.blacklist.toLocaleString()}</span></p>
+            <p>{td("users")} <span className="text-foreground font-medium">{data.users.toLocaleString()}</span></p>
+            <p>{td("status")} <span className={data.online ? "text-green-500" : "text-red-500"}>{data.online ? td("online") : td("offline")}</span></p>
           </div>
         </div>
       );
@@ -83,7 +92,7 @@ export function TrafficDistribution({ nodes, title = "Traffic by Node" }: Traffi
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium">{heading}</CardTitle>
         <CardDescription className="text-xs">
           {totalRequests.toLocaleString()} total requests
         </CardDescription>

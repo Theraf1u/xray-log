@@ -120,6 +120,11 @@ func (m *Manager) Healthy(ctx context.Context) error {
 func (m *Manager) DropExpiredPartitions(ctx context.Context) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	for _, tbl := range m.tables {
+		// RetentionDays <= 0 means unlimited retention. Partitions are still
+		// created daily, but historical partitions are never dropped.
+		if tbl.RetentionDays <= 0 {
+			continue
+		}
 		cutoff := today.AddDate(0, 0, -tbl.RetentionDays)
 		rows, err := m.pool.Query(ctx, `
 			SELECT child.relname

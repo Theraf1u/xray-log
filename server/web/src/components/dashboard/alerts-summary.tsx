@@ -6,6 +6,7 @@ import { Bell, AlertTriangle, ShieldAlert, Info, X, CheckCircle } from "lucide-r
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
@@ -24,6 +25,7 @@ interface AlertsSummaryProps {
   alerts: Alert[];
   onMarkRead?: (id: string) => void;
   onMarkAllRead?: () => void;
+  className?: string;
 }
 
 const severityConfig: Record<AlertSeverity, { 
@@ -58,7 +60,7 @@ const severityConfig: Record<AlertSeverity, {
   },
 };
 
-export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSummaryProps) {
+export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead, className }: AlertsSummaryProps) {
   const t = useTranslations("alerts");
   const unreadCount = alerts.filter(a => !a.read).length;
   const criticalCount = alerts.filter(a => a.severity === "critical" && !a.read).length;
@@ -67,8 +69,8 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
   const displayAlerts = alerts.slice(0, 5);
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className={cn("overflow-hidden", className)}>
+      <CardHeader className="pb-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Bell className="h-4 w-4 text-yellow-500" />
@@ -97,18 +99,18 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
           <div className="flex gap-2 mt-2">
             {criticalCount > 0 && (
               <Badge variant="outline" className={severityConfig.critical.color}>
-                {criticalCount} Critical
+                {criticalCount} {t("critical")}
               </Badge>
             )}
             {highCount > 0 && (
               <Badge variant="outline" className={severityConfig.high.color}>
-                {highCount} High
+                {highCount} {t("high")}
               </Badge>
             )}
           </div>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="min-h-0 flex-1">
         {alerts.length === 0 ? (
           <div className="text-center py-6 text-muted-foreground">
             <CheckCircle className="h-8 w-8 mx-auto mb-2 opacity-30 text-green-500" />
@@ -116,12 +118,16 @@ export function AlertsSummary({ alerts, onMarkRead, onMarkAllRead }: AlertsSumma
             <p className="text-xs mt-1">{t("allRunning")}</p>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[280px] overflow-y-auto scrollbar-thin pr-1">
+          // Rows, not a stack of tinted boxes. Severity was being said three
+          // times at once — border colour, fill colour and text colour — so
+          // five alerts produced five competing rectangles. Now the icon
+          // carries severity and the row carries the text.
+          <div className="-mx-5 h-full overflow-y-auto scrollbar-thin">
             {displayAlerts.map((alert) => {
               const config = severityConfig[alert.severity];
-              const baseClassName = `flex items-start gap-2 p-2 rounded-lg border transition-all ${
-                config.color
-              } ${!alert.read ? "ring-1 ring-primary/20" : "opacity-70"}`;
+              const baseClassName = `glass-row flex items-start gap-2.5 px-5 py-2 ${
+                alert.read ? "opacity-55" : ""
+              }`;
               
               const content = (
                 <>

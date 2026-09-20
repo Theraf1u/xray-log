@@ -1,10 +1,13 @@
 "use client";
 
+import { formatRu } from "@/lib/utils/date";
 import { useMemo } from "react";
 import { HourlyStats, TimeRange } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/skeleton";
-import { format } from "date-fns";
+
 import {
   AreaChart,
   Area,
@@ -32,16 +35,28 @@ interface ActivityChartProps {
   description?: string;
   loading?: boolean;
   timeRange?: TimeRange;
+  className?: string;
 }
 
 export function ActivityChart({
   data,
   onlineHistory,
-  title = "Activity",
-  description = "Requests over time",
+  title,
+  description,
   loading = false,
   timeRange = "24h",
+  className,
 }: ActivityChartProps) {
+  const ts = useTranslations("stats");
+  const heading = title ?? ts("totalRequests");
+  const subheading = description ?? ts("processedLogs");
+  // Shared with the tooltip formatter and the legend below.
+  const seriesLabels: Record<string, string> = {
+    requests: ts("totalRequests"),
+    blacklist: ts("blacklistHits"),
+    online: ts("onlineUsers"),
+  };
+
   const chartData = useMemo(() => {
     if (!data || data.length === 0) {
       return [];
@@ -69,8 +84,8 @@ export function ActivityChart({
         const key = date.toISOString().slice(0, 13);
         const onlineFromSnapshot = overlay.get(key);
         return {
-          hour: isLongRange ? format(date, "MMM d") : format(date, "HH:mm"),
-          fullDate: format(date, "MMM d, HH:mm"),
+          hour: isLongRange ? formatRu(date, "MMM d") : formatRu(date, "HH:mm"),
+          fullDate: formatRu(date, "MMM d, HH:mm"),
           requests: d.total_requests || 0,
           blacklist: d.blacklist_hits || 0,
           online: onlineFromSnapshot !== undefined ? onlineFromSnapshot : (d.unique_users || 0),
@@ -92,8 +107,8 @@ export function ActivityChart({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
+          <CardTitle>{heading}</CardTitle>
+          <CardDescription>{subheading}</CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-[300px] w-full" />
@@ -103,13 +118,16 @@ export function ActivityChart({
   }
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader>
-        <CardTitle className="text-sm sm:text-base">{title}</CardTitle>
-        <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
+    <Card className={cn("overflow-hidden", className)}>
+      <CardHeader className="pb-0">
+        <CardTitle className="text-sm sm:text-base">{heading}</CardTitle>
+        <CardDescription className="text-xs">{subheading}</CardDescription>
       </CardHeader>
-      <CardContent className="p-2 sm:p-6">
-        <div className="h-[250px] sm:h-[300px] w-full min-w-0">
+      {/* The plot grows to whatever height the row gives it. It used to be
+          pinned at 300px inside a card the grid stretched to ~900px, which is
+          where the enormous black void under the chart came from. */}
+      <CardContent className="min-h-0 flex-1 p-2 sm:px-4 sm:pb-4">
+        <div className="h-full min-h-[240px] w-full min-w-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={chartData}
@@ -117,16 +135,16 @@ export function ActivityChart({
             >
               <defs>
                 <linearGradient id="colorRequests" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="hsl(var(--viz-1))" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(var(--viz-1))" stopOpacity={0.1}/>
                 </linearGradient>
                 <linearGradient id="colorBlacklist" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(var(--destructive))" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(var(--destructive))" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="hsl(var(--viz-2))" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(var(--viz-2))" stopOpacity={0.1}/>
                 </linearGradient>
                 <linearGradient id="colorOnline" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="hsl(var(--viz-3))" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="hsl(var(--viz-3))" stopOpacity={0.1}/>
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -138,7 +156,7 @@ export function ActivityChart({
                 className="text-muted-foreground"
                 interval={tickInterval}
               />
-              <YAxis 
+              <YAxis domain={[0, "dataMax"]}  
                 yAxisId="left"
                 tick={{ fontSize: 12 }}
                 tickLine={false}
@@ -172,28 +190,18 @@ export function ActivityChart({
                   return item?.fullDate || label;
                 }}
                 formatter={(value: number, name: string) => {
-                  const labels: Record<string, string> = {
-                    requests: "Requests",
-                    blacklist: "Blacklist",
-                    online: "Online Users"
-                  };
-                  return [value.toLocaleString(), labels[name] || name];
+                  return [value.toLocaleString(), seriesLabels[name] || name];
                 }}
               />
               <Legend 
                 verticalAlign="top"
                 height={36}
-                formatter={(value) => {
-                  if (value === "requests") return "Requests";
-                  if (value === "blacklist") return "Blacklist";
-                  if (value === "online") return "Online Users";
-                  return value;
-                }}
+                formatter={(value) => seriesLabels[value] || value}
               />
               <Area
                 type="monotone"
                 dataKey="requests"
-                stroke="hsl(var(--primary))"
+                stroke="hsl(var(--viz-1))"
                 fillOpacity={1}
                 fill="url(#colorRequests)"
                 strokeWidth={2}
@@ -202,7 +210,7 @@ export function ActivityChart({
               <Area
                 type="monotone"
                 dataKey="blacklist"
-                stroke="hsl(var(--destructive))"
+                stroke="hsl(var(--viz-2))"
                 fillOpacity={1}
                 fill="url(#colorBlacklist)"
                 strokeWidth={2}
@@ -211,7 +219,7 @@ export function ActivityChart({
               <Area
                 type="monotone"
                 dataKey="online"
-                stroke="hsl(142, 76%, 36%)"
+                stroke="hsl(var(--viz-3))"
                 fillOpacity={1}
                 fill="url(#colorOnline)"
                 strokeWidth={2}

@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AnimatedNumber } from "@/components/ui/animated-number";
+import { StatRail } from "@/components/ui/stat-rail";
 import {
   Table,
   TableBody,
@@ -56,16 +57,19 @@ function formatBytes(n: number): string {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
 
+// Compact form (5s / 3m / 2h / 1d) rather than the full "N minutes ago" of
+// lib/utils/date.ts: this table has a dedicated narrow column for it, so the
+// short form reads better than it would as free text in a sentence.
 function formatRelative(ts: string): string {
   if (!ts) return "—";
   const d = new Date(ts).getTime();
   if (!d || d < 1e10) return "—";
   const diff = Math.floor((Date.now() - d) / 1000);
-  if (diff < 5) return "just now";
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 5) return "сейчас";
+  if (diff < 60) return `${diff}с назад`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}м назад`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`;
+  return `${Math.floor(diff / 86400)}д назад`;
 }
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -146,56 +150,45 @@ export default function BridgeUsersPage() {
       </div>
 
       {/* Filters */}
-      <Card>
-        <CardContent className="pt-6 flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{t("bridge")}:</span>
-            {["ru-whitelist", "ru-bride"].map(n => (
-              <Button
-                key={n}
-                size="sm"
-                variant={node === n ? "default" : "outline"}
-                onClick={() => setNode(n)}
-              >
-                {n}
-              </Button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">{t("window")}:</span>
-            {WINDOWS.map(w => (
-              <Button
-                key={w.value}
-                size="sm"
-                variant={since === w.value ? "default" : "outline"}
-                onClick={() => setSince(w.value)}
-              >
-                {w.label}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">{t("totalUsers")}</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold"><AnimatedNumber value={stats.users} /></div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">{t("totalFlows")}</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold"><AnimatedNumber value={stats.flows} /></div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">{t("uniqueIPs")}</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold"><AnimatedNumber value={stats.uniqueIPs} /></div></CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">{t("uniqueDests")}</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold"><AnimatedNumber value={stats.uniqueDsts} /></div></CardContent>
-        </Card>
+      {/* A compact filter bar rather than a Card whose only content was
+          two rows of buttons behind 24px of card padding. */}
+      <div className="glass flex flex-wrap items-center gap-4 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{t("bridge")}:</span>
+          {["ru-whitelist", "ru-bride"].map(n => (
+            <Button
+              key={n}
+              size="sm"
+              variant={node === n ? "default" : "outline"}
+              onClick={() => setNode(n)}
+            >
+              {n}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{t("window")}:</span>
+          {WINDOWS.map(w => (
+            <Button
+              key={w.value}
+              size="sm"
+              variant={since === w.value ? "default" : "outline"}
+              onClick={() => setSince(w.value)}
+            >
+              {w.label}
+            </Button>
+          ))}
+        </div>
       </div>
+
+      <StatRail
+        items={[
+          { key: "users", label: t("totalUsers"), value: stats.users, motif: "users" },
+          { key: "flows", label: t("totalFlows"), value: stats.flows, motif: "stream" },
+          { key: "ips", label: t("uniqueIPs"), value: stats.uniqueIPs, motif: "nodes" },
+          { key: "dests", label: t("uniqueDests"), value: stats.uniqueDsts, motif: "globe" },
+        ]}
+      />
 
       {/* Table */}
       <Card>

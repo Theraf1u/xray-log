@@ -25,6 +25,10 @@ type RemnawaveStatsResponse struct {
 	UsersWithHwidLimit int                `json:"usersWithHwidLimit"`
 	HwidStats          *HwidStatsResponse `json:"hwidStats,omitempty"`
 	LastSync           string             `json:"lastSync"`
+	// Status is the integration's real state (loading | online | offline |
+	// disabled). Clients must use this instead of inferring liveness from
+	// TotalUsers, which is zero during the first sync after a restart.
+	Status string `json:"status"`
 }
 
 type HwidStatsResponse struct {
@@ -88,6 +92,7 @@ func (s *Server) handleRemnawaveStats(w http.ResponseWriter, r *http.Request) {
 		Enabled:    stats.IsConfigured,
 		TotalUsers: len(users),
 		LastSync:   lastSync,
+		Status:     s.remnawave.Health().Status,
 	}
 
 	now := time.Now()

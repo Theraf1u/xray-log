@@ -1,10 +1,11 @@
 "use client";
 
+import { formatRu } from "@/lib/utils/date";
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { format, parseISO } from "date-fns";
+import { parseISO } from "date-fns";
 import {
   AreaChart,
   Area,
@@ -19,17 +20,13 @@ import {
 import { TimeStats, ThreatType } from "@/lib/types";
 import { threatTypeConfig } from "./config";
 import { Clock, Calendar, TrendingUp, Activity } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { StatRail } from "@/components/ui/stat-rail";
 
 interface TimeChartProps {
   data: TimeStats | null;
   loading?: boolean;
 }
-
-// Helper to safely get label from threatTypeConfig
-const getTypeLabel = (type: string): string => {
-  const config = threatTypeConfig[type as ThreatType];
-  return config?.label || type.charAt(0).toUpperCase() + type.slice(1);
-};
 
 // Muted color palette with lower saturation
 const colors: Record<string, string> = {
@@ -68,6 +65,17 @@ const tooltipStyle = {
 };
 
 export function TimeChart({ data, loading = false }: TimeChartProps) {
+  const t = useTranslations("threatIntel");
+
+  // Category label, translated: threatTypeConfig stores a lowercase key
+  // (matching threatIntel.categories.*), so an unknown type falls back to
+  // capitalising the raw value rather than showing a missing-key artifact.
+  const getTypeLabel = (type: string): string => {
+    const config = threatTypeConfig[type as ThreatType];
+    if (config?.label) return t(`categories.${config.label}` as Parameters<typeof t>[0]);
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  };
+
   // Transform hourly data for chart
   const hourlyChartData = useMemo(() => {
     if (!data?.hourly || data.hourly.length === 0) return [];
@@ -77,7 +85,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
         let label = stat.hour;
         try {
           const date = stat.hour.includes("T") ? parseISO(stat.hour) : new Date(stat.hour);
-          label = format(date, "HH:mm");
+          label = formatRu(date, "HH:mm");
         } catch {
           // fallback
         }
@@ -101,7 +109,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
         let label = stat.day;
         try {
           const date = stat.day.includes("T") ? parseISO(stat.day) : new Date(stat.day);
-          label = format(date, "MMM d");
+          label = formatRu(date, "MMM d");
         } catch {
           // fallback
         }
@@ -163,9 +171,9 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
       <Card className="border-dashed">
         <CardContent className="flex flex-col items-center justify-center h-[200px] text-center">
           <Activity className="h-12 w-12 text-muted-foreground/50 mb-4" />
-          <p className="text-muted-foreground">No time-based data available yet</p>
+          <p className="text-muted-foreground">{t("noTimeData")}</p>
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Statistics will appear after threat matches are recorded
+            {t("noTimeDataDesc")}
           </p>
         </CardContent>
       </Card>
@@ -174,55 +182,34 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
 
   return (
     <div className="space-y-4">
-      {/* Stats Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card className="bg-blue-500/10 border-blue-500/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              Last 24 Hours
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-              {totals.hourlyTotal.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">Total matches</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-violet-500/10 border-violet-500/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-              Daily Average
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-violet-600 dark:text-violet-400">
-              {totals.dailyAvg.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">Matches per day</p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-amber-500/10 border-amber-500/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              Peak Hour
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
-              {totals.peakHour.label}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {totals.peakHour.total.toLocaleString()} matches
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Three coloured cards became one rail. */}
+      <StatRail
+        columns={3}
+        items={[
+          {
+            key: "last24h",
+            label: t("last24Hours"),
+            value: totals.hourlyTotal,
+            hint: t("totalMatches"),
+            motif: "pulse",
+          },
+          {
+            key: "dailyAvg",
+            label: t("dailyAverage"),
+            value: totals.dailyAvg,
+            hint: t("matchesPerDay"),
+            motif: "database",
+          },
+          {
+            key: "peakHour",
+            label: t("peakHour"),
+            value: totals.peakHour.label,
+            hint: t("matchesCount", { count: totals.peakHour.total.toLocaleString() }),
+            tone: "warn",
+            motif: "shield",
+          },
+        ]}
+      />
 
       {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -233,10 +220,10 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
               <div>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Clock className="h-4 w-4 text-muted-foreground" />
-                  Hourly Activity
+                  {t("hourlyActivity")}
                 </CardTitle>
                 <CardDescription className="text-xs mt-1">
-                  Threat matches by category (24h)
+                  {t("byCategory24h")}
                 </CardDescription>
               </div>
               <div className="flex gap-1 flex-wrap justify-end">
@@ -274,7 +261,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                     interval="preserveStartEnd"
                     className="text-muted-foreground"
                   />
-                  <YAxis 
+                  <YAxis domain={[0, "dataMax"]}  
                     tick={{ fontSize: 10 }} 
                     tickLine={false}
                     axisLine={false}
@@ -314,10 +301,10 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
               <div>
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  Daily Activity
+                  {t("dailyActivity")}
                 </CardTitle>
                 <CardDescription className="text-xs mt-1">
-                  Threat matches by category (7d)
+                  {t("byCategory7d")}
                 </CardDescription>
               </div>
             </div>
@@ -334,7 +321,7 @@ export function TimeChart({ data, loading = false }: TimeChartProps) {
                     axisLine={false}
                     className="text-muted-foreground"
                   />
-                  <YAxis 
+                  <YAxis domain={[0, "dataMax"]}  
                     tick={{ fontSize: 10 }} 
                     tickLine={false}
                     axisLine={false}

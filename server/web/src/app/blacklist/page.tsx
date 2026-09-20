@@ -5,12 +5,12 @@ import { authFetch } from "@/contexts/auth-context";
 import Link from "next/link";
 import { useWsBlacklist } from "@/contexts/websocket-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { TimeRangeSelector } from "@/components/dashboard/time-range-selector";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
-import { StatCard, StatCardGrid } from "@/components/threatintel/stat-card";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import {
   Table,
@@ -28,11 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Wifi, WifiOff, Search } from "lucide-react";
+import { ShieldAlert, Globe, Users, TrendingUp, ExternalLink, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { format } from "date-fns";
+
 import { TimeRange, BlacklistAnalytics } from "@/lib/types";
-import { isValidDate } from "@/lib/utils/date";
+import { isValidDate, formatRu } from "@/lib/utils/date";
 import {
   AreaChart,
   Area,
@@ -47,7 +47,7 @@ export default function BlacklistPage() {
   const t = useTranslations("blacklist");
   const tCommon = useTranslations("common");
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
-  const { blacklist: wsBlacklist, loading: wsLoading, connected } = useWsBlacklist();
+  const { blacklist: wsBlacklist, loading: wsLoading } = useWsBlacklist();
   const [httpAnalytics, setHttpAnalytics] = useState<BlacklistAnalytics | null>(null);
   const [httpLoading, setHttpLoading] = useState(false);
   const [domainSearch, setDomainSearch] = useState("");
@@ -205,76 +205,63 @@ export default function BlacklistPage() {
 
   // Prepare chart data
   const chartData = analytics.hourly_stats?.filter(h => isValidDate(h.hour)).map((h) => ({
-    hour: format(new Date(h.hour), "HH:mm"),
+    hour: formatRu(new Date(h.hour), "HH:mm"),
     hits: h.hit_count,
   })) || [];
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
+            <ShieldAlert className="h-5 w-5 text-destructive sm:h-6 sm:w-6" />
             {t("title")}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {t("description")}
-          </p>
+          <p className="text-sm text-muted-foreground">{t("description")}</p>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <Badge 
-            variant={connected ? "default" : "destructive"} 
-            className="flex items-center gap-1.5"
-          >
-            {connected ? (
-              <>
-                <Wifi className="h-3 w-3" />
-                {tCommon("live")}
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-3 w-3" />
-                {tCommon("disconnected")}
-              </>
-            )}
-          </Badge>
-          <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
-        </div>
+        <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
       </div>
 
-      {/* Stats Cards */}
-      <StatCardGrid columns={4}>
-        <StatCard
-          label={t("totalHits")}
-          value={analytics.total_hits.toLocaleString()}
-          subValue={timeLabels[timeRange]}
-          icon={<TrendingUp className="h-4 w-4" />}
-          variant="danger"
-        />
-        <StatCard
-          label={t("uniqueUsers")}
-          value={analytics.unique_users}
-          subValue={t("accessedBlocked")}
-          icon={<Users className="h-4 w-4" />}
-          variant="muted"
-        />
-        <StatCard
-          label={t("uniqueDomains")}
-          value={analytics.unique_domains}
-          subValue={t("blockedDestinations")}
-          icon={<Globe className="h-4 w-4" />}
-          variant="muted"
-        />
-        <StatCard
-          label={t("avgPerUser")}
-          value={analytics.unique_users > 0
-            ? (analytics.total_hits / analytics.unique_users).toFixed(1)
-            : "0"}
-          subValue={t("hitsPerUser")}
-          icon={<ShieldAlert className="h-4 w-4" />}
-          variant="muted"
-        />
-      </StatCardGrid>
+      {/* Four bordered cards (each with its own header + content) became one
+          rail: same four figures, a third of the height. The connected/
+          disconnected badge that used to sit here duplicated the WebSocket
+          tile already in the header, so it is gone too. */}
+      <StatRail
+        items={[
+          {
+            key: "totalHits",
+            label: t("totalHits"),
+            value: analytics.total_hits,
+            hint: timeLabels[timeRange],
+            tone: "bad",
+            motif: "shield",
+          },
+          {
+            key: "uniqueUsers",
+            label: t("uniqueUsers"),
+            value: analytics.unique_users,
+            hint: t("accessedBlocked"),
+            motif: "users",
+          },
+          {
+            key: "uniqueDomains",
+            label: t("uniqueDomains"),
+            value: analytics.unique_domains,
+            hint: t("blockedDestinations"),
+            motif: "globe",
+          },
+          {
+            key: "avgPerUser",
+            label: t("avgPerUser"),
+            value:
+              analytics.unique_users > 0
+                ? (analytics.total_hits / analytics.unique_users).toFixed(1)
+                : "0",
+            hint: t("hitsPerUser"),
+            motif: "pulse",
+          },
+        ]}
+      />
 
       {/* Hourly Chart */}
       {chartData.length > 0 && (
@@ -285,16 +272,17 @@ export default function BlacklistPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={chartData}>
+              <AreaChart
+              margin={{ top: 16, right: 12, left: 4, bottom: 4 }} data={chartData}>
                 <defs>
                   <linearGradient id="colorHits" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(var(--muted-foreground))" stopOpacity={0} />
+                    <stop offset="5%" stopColor="hsl(var(--viz-1))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--viz-1))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                <XAxis dataKey="hour" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                <YAxis className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
+                <XAxis dataKey="hour" className="text-xs" tick={{ fill: 'hsl(var(--viz-1))' }} />
+                <YAxis domain={[0, "dataMax"]}  className="text-xs" tick={{ fill: 'hsl(var(--viz-1))' }} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: 'hsl(var(--card))',
@@ -305,7 +293,8 @@ export default function BlacklistPage() {
                 <Area
                   type="monotone"
                   dataKey="hits"
-                  stroke="hsl(var(--muted-foreground))"
+                  stroke="hsl(var(--viz-1))"
+                  strokeWidth={2.5}
                   fillOpacity={1}
                   fill="url(#colorHits)"
                   name="Hits"
@@ -693,7 +682,7 @@ export default function BlacklistPage() {
                     <TableRow key={idx}>
                       <TableCell className="text-muted-foreground text-xs sm:text-sm whitespace-nowrap">
                         {isValidDate(match.timestamp)
-                          ? format(new Date(match.timestamp), "HH:mm:ss")
+                          ? formatRu(new Date(match.timestamp), "HH:mm:ss")
                           : "—"
                         }
                       </TableCell>

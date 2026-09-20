@@ -38,7 +38,7 @@ export function DataTable<T>({
   data,
   columns,
   pageSize: initialPageSize = 20,
-  pageSizeOptions = [10, 20, 50, 100],
+  pageSizeOptions = [25, 100, 500, 1000],
   maxHeight = "600px",
   emptyMessage = "No data",
   stickyHeader = true,
@@ -228,7 +228,7 @@ export function PaginationControls({
   totalItems,
   startIndex,
   endIndex,
-  pageSizeOptions = [10, 20, 50, 100],
+  pageSizeOptions = [25, 100, 500, 1000],
 }: PaginationControlsProps) {
   if (totalPages <= 1) return null;
 

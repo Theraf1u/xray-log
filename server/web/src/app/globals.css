@@ -118,10 +118,14 @@
   }
   body {
     @apply bg-background text-foreground;
-    overflow-x: hidden;
+    /* `clip`, not `hidden`. `overflow-x: hidden` makes the element a scroll
+       container, and a scroll container breaks `position: sticky` for its
+       descendants — which is why the header scrolled away despite being
+       sticky. `clip` crops the same overflow without creating one. */
+    overflow-x: clip;
   }
   html {
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 
@@ -319,5 +323,344 @@
     .fixed.inset-0 {
       height: -webkit-fill-available;
     }
+  }
+}
+
+/* Status tiles in the header.
+   "breathe" is the healthy heartbeat, "alarm" the slow red flash of a failed
+   service. Both are deliberately slow so a wall-mounted dashboard is calm
+   rather than strobing, and both stop for reduced-motion users. */
+@keyframes status-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@keyframes status-alarm {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.animate-status-breathe {
+  animation: status-breathe 2.4s ease-in-out infinite;
+}
+
+.animate-status-alarm {
+  animation: status-alarm 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-status-breathe,
+  .animate-status-alarm {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   Liquid Glass — material layer
+   ============================================================
+   Glass is defined by what passes through it, so every value below is an
+   alpha over whatever sits behind the surface, never an opaque fill. A flat
+   page would make these surfaces read as plain grey boxes, which is why the
+   ambient field exists: it gives the material something to refract. */
+
+:root {
+  --glass-tint: 255 255 255;
+  --glass-opacity: 0.58;
+  --glass-blur: 28px;
+  --glass-saturate: 180%;
+  --glass-rim: 255 255 255;
+  --glass-rim-opacity: 0.85;
+  --glass-hairline: 0 0 0;
+  --glass-hairline-opacity: 0.08;
+  --glass-shadow: 0 10px 34px -14px rgb(0 0 0 / 0.20);
+  --glass-sheen: 0 1px 0 0 rgb(255 255 255 / 0.65) inset;
+
+  /* Ambient field: the light the glass picks up. */
+  --ambient-1: 210 90% 62%;
+  --ambient-2: 265 85% 65%;
+  --ambient-3: 160 70% 55%;
+  --ambient-strength: 0.10;
+}
+
+.dark {
+  --glass-tint: 16 18 22;
+  --glass-opacity: 0.52;
+  --glass-blur: 30px;
+  --glass-saturate: 150%;
+  --glass-rim: 255 255 255;
+  --glass-rim-opacity: 0.16;
+  --glass-hairline: 255 255 255;
+  --glass-hairline-opacity: 0.07;
+  --glass-shadow: 0 14px 44px -18px rgb(0 0 0 / 0.70);
+  --glass-sheen: 0 1px 0 0 rgb(255 255 255 / 0.07) inset;
+  --ambient-strength: 0.16;
+}
+
+/* The light source. Fixed, so surfaces reveal different parts of it as the
+   page scrolls — the cue that sells glass as a material rather than a filter. */
+.ambient-field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, hsl(var(--ambient-1) / var(--ambient-strength)), transparent 60%),
+    radial-gradient(50rem 38rem at 92% 6%, hsl(var(--ambient-2) / var(--ambient-strength)), transparent 62%),
+    radial-gradient(46rem 34rem at 68% 92%, hsl(var(--ambient-3) / calc(var(--ambient-strength) * 0.8)), transparent 60%);
+}
+
+.glass {
+  position: relative;
+  border-radius: var(--radius-xl);
+  background: rgb(var(--glass-tint) / var(--glass-opacity));
+  /* Unprefixed only, deliberately. Writing the -webkit- form alongside it
+     makes Lightning CSS collapse the pair down to -webkit-backdrop-filter,
+     which Chrome does not support (CSS.supports reports false) — the surfaces
+     then render as flat translucent panels with no refraction at all. The
+     build adds whatever prefixes the browser targets actually need. */
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--glass-shadow), var(--glass-sheen);
+}
+
+/* Specular rim: bright where light would catch the top edge, fading to
+   nothing at the bottom. Drawn as a masked gradient border so it can be
+   directional — a plain 1px border cannot be. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    180deg,
+    rgb(var(--glass-rim) / var(--glass-rim-opacity)),
+    rgb(var(--glass-rim) / calc(var(--glass-rim-opacity) * 0.25)) 28%,
+    rgb(var(--glass-rim) / 0) 70%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Without backdrop-filter the material cannot exist, so fall back to an
+   honest solid surface instead of a washed-out translucent one. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .glass::before { display: none; }
+}
+
+/* Separation inside one surface — replaces nesting a second card. */
+.glass-hairline {
+  background: rgb(var(--glass-hairline) / var(--glass-hairline-opacity));
+}
+
+.glass-divide-x > * + * {
+  border-left: 1px solid rgb(var(--glass-hairline) / var(--glass-hairline-opacity));
+}
+
+.glass-divide-y > * + * {
+  border-top: 1px solid rgb(var(--glass-hairline) / var(--glass-hairline-opacity));
+}
+
+/* Interactive glass: lifts toward the light on hover. */
+.glass-interactive {
+  transition: background-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.glass-interactive:hover {
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) + 0.10));
+  box-shadow: var(--glass-shadow), var(--glass-sheen), 0 0 0 1px rgb(var(--glass-rim) / calc(var(--glass-rim-opacity) * 0.3));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-interactive { transition: none; }
+}
+
+/* ============================================================
+   Liquid Glass — second pass
+   ============================================================
+   The first pass made surfaces translucent but kept the admin-template
+   vocabulary: four radii, six accent hues, a bordered box around every row.
+   This pass fixes the vocabulary itself.
+
+   Rules:
+   1. ONE radius scale. Panels are generously rounded, controls are pills,
+      nothing in between invents its own corner.
+   2. Colour carries meaning or it does not appear. Numbers are neutral;
+      red means broken, green means live. Nothing is coloured decoratively.
+   3. Separation by hairline and translucency, never by a nested border. */
+
+:root {
+  --radius: 0.875rem;
+  --radius-glass: 1.375rem;
+  --radius-pill: 999px;
+
+  /* Chart palette — defined here so both themes and every chart agree.
+     The previous values were hsl(var(--primary)) while the tokens are
+     oklch(), which is not a valid colour and rendered as black. */
+  --viz-1: 213 94% 68%;
+  --viz-2: 4 90% 66%;
+  --viz-3: 152 62% 52%;
+}
+
+.dark {
+  /* Glass needs light behind it. At the first pass's strength the field was
+     invisible on a near-black page, so the surfaces read as flat panels. */
+  --ambient-strength: 0.30;
+  --glass-opacity: 0.44;
+  --glass-blur: 36px;
+  --viz-1: 213 94% 72%;
+  --viz-2: 4 88% 68%;
+  --viz-3: 152 58% 56%;
+}
+
+:root:not(.dark) {
+  --ambient-strength: 0.16;
+}
+
+/* A soft vertical lift as well as the colour fields: real glass sits in a
+   room, not on a flat backdrop. */
+.ambient-field::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), transparent 40%);
+}
+
+.glass {
+  border-radius: var(--radius-glass);
+}
+
+/* Nested glass: a surface sitting ON another surface is thinner and picks up
+   less light, so depth stays legible instead of stacking identical boxes. */
+.glass-inset {
+  border-radius: var(--radius);
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.5));
+}
+
+/* Rows inside a surface: separated by a rule, never boxed. */
+.glass-row + .glass-row {
+  border-top: 1px solid rgb(var(--glass-hairline) / var(--glass-hairline-opacity));
+}
+
+.glass-row {
+  transition: background-color 160ms ease;
+}
+
+.glass-row:hover {
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.35));
+}
+
+/* Segmented control — the navigation vocabulary iOS actually uses, instead
+   of a fixed grid that leaves an empty cell when the item count is odd. */
+.seg-item {
+  border-radius: var(--radius-pill);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.seg-item[data-active="true"] {
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) + 0.22));
+  box-shadow: 0 1px 0 0 rgb(var(--glass-rim) / calc(var(--glass-rim-opacity) * 0.5)) inset;
+}
+
+.seg-item[data-active="false"]:hover {
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.45));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-row,
+  .seg-item {
+    transition: none;
+  }
+}
+
+/* Country flags.
+   Windows has no flag glyphs: it draws a regional-indicator pair as the two
+   letters themselves, which is why "🇷🇺 RU" read as "RU RU". This font supplies
+   the flag glyphs and is scoped to the one class that needs them, so it never
+   affects body text. If the CDN is unreachable the text simply falls back to
+   the letters — exactly what it shows today, so nothing regresses. */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  src: url("https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1/dist/TwemojiCountryFlags.woff2") format("woff2");
+  unicode-range: U+1F1E6-1F1FF;
+  font-display: swap;
+}
+
+.font-flag {
+  font-family: "Twemoji Country Flags", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+
+/* ------------------------------------------------------------------
+   Service status indicators
+   ------------------------------------------------------------------
+   The dot is solid and never changes; a halo grows out of it and fades.
+   Colour comes from `currentColor`, so one rule serves green, amber and red.
+
+   `--phase` is a negative delay set per element from the shared page clock,
+   which keeps every indicator in unison no matter when it mounted. Because
+   the dot no longer animates, entering the cycle part-way is invisible. */
+
+.status-dot {
+  position: relative;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: status-halo 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: var(--phase, 0s);
+}
+
+/* Not live: no halo at all, rather than a halo that means nothing. */
+.status-dot--idle::after {
+  display: none;
+}
+
+@keyframes status-halo {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  70% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* Entrance, so the strip does not pop in already half-way through a pulse. */
+@keyframes status-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.status-appear {
+  animation: status-appear 420ms cubic-bezier(0.2, 0, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot::after,
+  .status-appear {
+    animation: none;
   }
 }

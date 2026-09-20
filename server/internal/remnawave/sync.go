@@ -9,12 +9,15 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/rediscache"
+	"github.com/google/uuid"
 )
 
 // StorageWriter interface for writing Remnawave data to storage
 type StorageWriter interface {
 	UpsertRemnaUser(ctx context.Context, user *RemnaUserData) error
 	UpsertRemnaHwidDevice(ctx context.Context, device *RemnaHwidData) error
+	UpsertRemnaUsers(ctx context.Context, users []*RemnaUserData) error
+	UpsertRemnaHwidDevices(ctx context.Context, devices []*RemnaHwidData) error
 	UpsertRemnaNode(ctx context.Context, node *RemnaNodeData) error
 	UpdateRemnaUserHwidCounts(ctx context.Context) error
 	// PruneRemnaUsers removes rows whose uuid is not in liveUUIDs. Called
@@ -87,9 +90,15 @@ type RemnaNodeData struct {
 
 // SyncService handles periodic synchronization with Remnawave API
 type SyncService struct {
-	client       *Client
+	client  *Client
+	storage StorageWriter
+	syncMu  sync.Mutex
+
+	// intervalMu guards syncInterval and enabled: the admin panel can change
+	// both while Start's loop is running, live, without a restart.
+	intervalMu   sync.RWMutex
 	syncInterval time.Duration
-	storage      StorageWriter
+	enabled      bool
 
 	// ID Cache for resolving numeric IDs to usernames
 	idCache *IDCache
@@ -112,6 +121,7 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 	svc := &SyncService{
 		client:          client,
 		syncInterval:    syncInterval,
+		enabled:         true,
 		users:           make(map[string]*User),
 		usersByEmail:    make(map[string]*User),
 		usersByUsername: make(map[string]*User),
@@ -126,6 +136,63 @@ func NewSyncService(client *Client, syncInterval time.Duration) *SyncService {
 func (s *SyncService) SetStorage(storage StorageWriter) {
 	s.storage = storage
 }
+
+// SetCredentials proxies to the underlying client. Takes effect on the next
+// poll/sync cycle; Start's loop re-reads the client's IsConfigured() state
+// every cycle rather than caching it, so this needs no extra plumbing.
+func (s *SyncService) SetCredentials(baseURL, apiToken string) {
+	s.client.SetCredentials(baseURL, apiToken)
+}
+
+// SetInterval changes the sync cadence live. Takes effect on the next cycle.
+func (s *SyncService) SetInterval(d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	s.intervalMu.Lock()
+	s.syncInterval = d
+	s.intervalMu.Unlock()
+}
+
+func (s *SyncService) interval() time.Duration {
+	s.intervalMu.RLock()
+	defer s.intervalMu.RUnlock()
+	return s.syncInterval
+}
+
+// Credentials proxies to the underlying client (see Client.Credentials).
+func (s *SyncService) Credentials() (baseURL, apiToken string) {
+	return s.client.Credentials()
+}
+
+// Interval returns the current sync cadence.
+func (s *SyncService) Interval() time.Duration {
+	return s.interval()
+}
+
+// IsEnabled reports whether the sync loop is paused via the admin panel.
+func (s *SyncService) IsEnabled() bool {
+	return s.isEnabled()
+}
+
+// SetEnabled pauses or resumes the sync loop without touching credentials —
+// distinct from IsConfigured(), which only asks whether credentials exist.
+func (s *SyncService) SetEnabled(enabled bool) {
+	s.intervalMu.Lock()
+	s.enabled = enabled
+	s.intervalMu.Unlock()
+}
+
+func (s *SyncService) isEnabled() bool {
+	s.intervalMu.RLock()
+	defer s.intervalMu.RUnlock()
+	return s.enabled
+}
+
+// pollInterval is how often Start checks back while unconfigured or paused —
+// short, so enabling Remnawave from the admin panel takes effect quickly
+// rather than waiting out whatever the full sync interval happens to be.
+const pollInterval = 10 * time.Second
 
 // SetIDCacheRedis wires the persistent L2 cache into the id cache. Nil is
 // allowed and disables L2 (the L1 map keeps working).
@@ -145,36 +212,56 @@ func (s *SyncService) ForceSync(ctx context.Context) error {
 	if !s.client.IsConfigured() {
 		return fmt.Errorf("client not configured")
 	}
-	s.sync(ctx)
+	if !s.sync(ctx) {
+		return fmt.Errorf("synchronization already in progress")
+	}
 	return nil
 }
 
-// Start begins the periodic synchronization
+// Start begins the periodic synchronization.
+//
+// It no longer exits for good when Remnawave is unconfigured at boot: the
+// admin panel can supply credentials and flip enabled=true later, and this
+// loop needs to notice and start syncing without a process restart. While
+// unconfigured or paused it just polls at pollInterval and does nothing.
 func (s *SyncService) Start(ctx context.Context) {
-	if !s.client.IsConfigured() {
-		log.Println("[remnawave] client not configured, sync disabled")
-		return
+	if s.client.IsConfigured() && s.isEnabled() {
+		// Complete the initial sync before starting the timer so large
+		// datasets cannot create two overlapping full syncs after a restart.
+		s.sync(ctx)
+	} else {
+		log.Println("[remnawave] not configured or disabled — waiting for admin configuration")
 	}
 
-	// Initial sync in background to not block server startup
-	go s.sync(ctx)
-
-	// Periodic sync
-	ticker := time.NewTicker(s.syncInterval)
-	defer ticker.Stop()
-
 	for {
+		wait := pollInterval
+		if s.client.IsConfigured() && s.isEnabled() {
+			wait = s.interval()
+		}
+		// Start the interval after the previous full sync has finished. A ticker
+		// would leave a pending tick while a large sync is running and start the
+		// next one immediately, keeping PostgreSQL busy continuously.
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
-			s.sync(ctx)
+		case <-timer.C:
+			if s.client.IsConfigured() && s.isEnabled() {
+				s.sync(ctx)
+			}
 		}
 	}
 }
 
 // sync performs a full synchronization
-func (s *SyncService) sync(ctx context.Context) {
+func (s *SyncService) sync(ctx context.Context) bool {
+	if !s.syncMu.TryLock() {
+		log.Println("[remnawave] sync skipped: another synchronization is already in progress")
+		return false
+	}
+	defer s.syncMu.Unlock()
+
 	log.Println("[remnawave] starting sync...")
 	start := time.Now()
 
@@ -210,6 +297,7 @@ func (s *SyncService) sync(ctx context.Context) {
 	if s.onSyncComplete != nil {
 		s.onSyncComplete()
 	}
+	return true
 }
 
 // syncUsers fetches and caches all users
@@ -223,10 +311,16 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 	usersByEmail := make(map[string]*User)
 	usersByUsername := make(map[string]*User)
 	usersByID := make(map[int64]*User)
+	userBatch := make([]*RemnaUserData, 0, len(resp.Users))
 	now := time.Now()
 
 	for i := range resp.Users {
 		user := &resp.Users[i]
+		// Remnawave v2 may omit the legacy UUID and expose only numeric ID.
+		// Keep the database UUID contract with a deterministic internal UUID.
+		if user.UUID == "" && user.ID > 0 {
+			user.UUID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(fmt.Sprintf("remnawave:user:%d", user.ID))).String()
+		}
 
 		// Populate legacy fields from nested UserTraffic (API v2.3.x)
 		user.PopulateFromTraffic()
@@ -248,7 +342,7 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 			usersByID[user.ID] = user
 		}
 
-		// Persist to storage if configured
+		// Build a batch for one transactional write after parsing all users.
 		if s.storage != nil {
 			userData := &RemnaUserData{
 				UUID:                 user.UUID,
@@ -296,9 +390,18 @@ func (s *SyncService) syncUsers(ctx context.Context) error {
 				}
 			}
 
-			if err := s.storage.UpsertRemnaUser(ctx, userData); err != nil {
-				log.Printf("[remnawave] failed to persist user %s: %v", user.Username, err)
+			// Same transactional caveat as HWID: a row without a valid uuid
+			// would abort the whole user snapshot.
+			if _, err := uuid.Parse(userData.UUID); err != nil {
+				log.Printf("[remnawave] skipping user %q: invalid uuid %q", user.Username, userData.UUID)
+			} else {
+				userBatch = append(userBatch, userData)
 			}
+		}
+	}
+	if s.storage != nil {
+		if err := s.storage.UpsertRemnaUsers(ctx, userBatch); err != nil {
+			return fmt.Errorf("persist users batch: %w", err)
 		}
 	}
 
@@ -337,6 +440,7 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 
 	// Track device count per user for updating user records
 	userDeviceCounts := make(map[string]int)
+	hwidBatch := make([]*RemnaHwidData, 0)
 
 	for {
 		resp, err := s.client.GetAllHwidDevices(ctx, start, pageSize)
@@ -345,10 +449,31 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 		}
 
 		for _, d := range resp.Devices {
-			devices[d.UserUUID] = append(devices[d.UserUUID], d)
-			userDeviceCounts[d.UserUUID]++
+			// New Remnawave responses identify the owner by numeric ID.
+			// Translate it to the canonical internal UUID before caching/persisting.
+			ownerKey := d.UserUUID
+			if ownerKey == "" && d.UserID > 0 { ownerKey = strconv.FormatInt(d.UserID, 10) }
+			if n, err := strconv.ParseInt(ownerKey, 10, 64); err == nil {
+				s.mu.RLock()
+				if user, ok := s.usersByID[n]; ok { ownerKey = user.UUID }
+				s.mu.RUnlock()
+			}
+			if ownerKey == "" {
+				log.Printf("[remnawave] skipping HWID %s with empty user id", d.Hwid)
+				continue
+			}
+			// remna_hwid_devices.user_uuid is a real uuid column and the whole
+			// snapshot is now written in a single transaction: one unresolvable
+			// owner would abort the batch and drop every device. Skip it instead.
+			if _, err := uuid.Parse(ownerKey); err != nil {
+				log.Printf("[remnawave] skipping HWID %s: unresolved owner %q", d.Hwid, ownerKey)
+				continue
+			}
+			d.UserUUID = ownerKey
+			devices[ownerKey] = append(devices[ownerKey], d)
+			userDeviceCounts[ownerKey]++
 
-			// Persist to storage if configured
+			// Build a batch for one transactional write after all pages arrive.
 			if s.storage != nil {
 				// Get username from cached users
 				username := ""
@@ -371,9 +496,7 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 					SyncedAt:     now,
 				}
 
-				if err := s.storage.UpsertRemnaHwidDevice(ctx, hwidData); err != nil {
-					log.Printf("[remnawave] failed to persist hwid device: %v", err)
-				}
+				hwidBatch = append(hwidBatch, hwidData)
 			}
 		}
 
@@ -381,6 +504,11 @@ func (s *SyncService) syncHwidDevices(ctx context.Context) error {
 			break
 		}
 		start += pageSize
+	}
+	if s.storage != nil {
+		if err := s.storage.UpsertRemnaHwidDevices(ctx, hwidBatch); err != nil {
+			return fmt.Errorf("persist hwid batch: %w", err)
+		}
 	}
 
 	s.mu.Lock()
@@ -594,6 +722,57 @@ func (s *SyncService) GetLastSyncTime() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastSync
+}
+
+// SyncHealth describes whether the Remnawave integration is actually working,
+// as opposed to merely being configured.
+type SyncHealth struct {
+	Configured bool      `json:"configured"`
+	Status     string    `json:"status"` // disabled | loading | online | offline
+	LastSync   time.Time `json:"last_sync"`
+	TotalUsers int       `json:"total_users"`
+}
+
+// staleAfter is how long the integration may go without a successful sync
+// before it counts as offline: three intervals, floored at five minutes so a
+// short interval cannot make the indicator flap.
+func (s *SyncService) staleAfter() time.Duration {
+	d := 3 * s.syncInterval
+	if d < 5*time.Minute {
+		d = 5 * time.Minute
+	}
+	return d
+}
+
+// Health reports integration health.
+//
+// An empty user cache is NOT evidence that the panel is unreachable: right
+// after a restart the first sync has simply not finished yet. Treating that as
+// "offline" is what made the dashboard announce a dead Remnawave API on every
+// restart, so the two cases are kept apart here — "loading" until the first
+// sync lands, "offline" only once a sync is genuinely overdue.
+func (s *SyncService) Health() SyncHealth {
+	s.mu.RLock()
+	lastSync := s.lastSync
+	users := len(s.users)
+	s.mu.RUnlock()
+
+	h := SyncHealth{
+		Configured: s.client.IsConfigured(),
+		LastSync:   lastSync,
+		TotalUsers: users,
+	}
+	switch {
+	case !h.Configured || !s.isEnabled():
+		h.Status = "disabled"
+	case lastSync.IsZero():
+		h.Status = "loading"
+	case time.Since(lastSync) > s.staleAfter():
+		h.Status = "offline"
+	default:
+		h.Status = "online"
+	}
+	return h
 }
 
 // GetStats returns sync service statistics

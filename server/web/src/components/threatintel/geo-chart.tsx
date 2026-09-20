@@ -15,10 +15,10 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { GeoSummary, ThreatType } from "@/lib/types";
-import { threatTypeConfig } from "./config";
-import { StatCard, StatCardGrid } from "./stat-card";
+import { GeoSummary } from "@/lib/types";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Globe, MapPin, Users, TrendingUp, Target } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 interface GeoChartProps {
   data: GeoSummary | null;
@@ -63,13 +63,8 @@ const tooltipStyle = {
   itemStyle: { color: "rgb(212, 212, 216)" },
 };
 
-// Get label for threat type
-const getTypeLabel = (type: string): string => {
-  const config = threatTypeConfig[type as ThreatType];
-  return config?.label || type;
-};
-
 export function GeoChart({ data, loading = false }: GeoChartProps) {
+  const t = useTranslations("threatIntel");
   // Transform data for bar chart
   const barData = useMemo(() => {
     if (!data?.top_countries?.length) return [];
@@ -122,14 +117,14 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <Globe className="h-5 w-5" />
-            Geographic Analysis
+            {t("geoAnalysisTitle")}
           </CardTitle>
-          <CardDescription>No geographic data available yet</CardDescription>
+          <CardDescription>{t("noGeoData")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground gap-2">
             <MapPin className="h-12 w-12 opacity-20" />
-            <p className="text-center">Geographic statistics will appear after<br/>threat matches with IP data are recorded</p>
+            <p className="text-center">{t("noGeoDataDesc")}<br/>{t("noGeoDataDesc2")}</p>
           </div>
         </CardContent>
       </Card>
@@ -138,37 +133,41 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
 
   return (
     <div className="space-y-4">
-      {/* Stats Summary */}
-      <StatCardGrid columns={4}>
-        <StatCard
-          icon={<Globe className="h-4 w-4" />}
-          label="Countries"
-          value={data.total_countries}
-          subValue="Unique countries detected"
-          variant="info"
-        />
-        <StatCard
-          icon={<Target className="h-4 w-4" />}
-          label="Total Matches"
-          value={stats?.totalMatches || 0}
-          subValue="Across all countries"
-          variant="muted"
-        />
-        <StatCard
-          icon={<Users className="h-4 w-4" />}
-          label="Users Affected"
-          value={stats?.totalUsers || 0}
-          subValue="Unique users with threats"
-          variant="success"
-        />
-        <StatCard
-          icon={<TrendingUp className="h-4 w-4" />}
-          label="Top Source"
-          value={stats?.topCountry ? `${getFlag(stats.topCountry.country_code)} ${stats.topCountry.country_code}` : "N/A"}
-          subValue={stats?.topCountry ? `${stats.topCountry.total_matches.toLocaleString()} matches` : "No data"}
-          variant="warning"
-        />
-      </StatCardGrid>
+      {/* Four bordered cards became one rail. */}
+      <StatRail
+        items={[
+          {
+            key: "countries",
+            label: t("countriesCol"),
+            value: data.total_countries,
+            hint: t("uniqueCountriesDetected"),
+            motif: "globe",
+          },
+          {
+            key: "totalMatches",
+            label: t("totalMatchesLabel"),
+            value: stats?.totalMatches || 0,
+            hint: t("acrossAllCountries"),
+            tone: "bad",
+            motif: "shield",
+          },
+          {
+            key: "usersAffected",
+            label: t("usersAffected"),
+            value: stats?.totalUsers || 0,
+            hint: t("uniqueUsersWithThreats"),
+            motif: "users",
+          },
+          {
+            key: "topSource",
+            label: t("topSource"),
+            value: stats?.topCountry ? `${getFlag(stats.topCountry.country_code)} ${stats.topCountry.country_code}` : t("notApplicable"),
+            hint: stats?.topCountry ? t("matchesCount", { count: stats.topCountry.total_matches.toLocaleString() }) : t("noDataShort"),
+            tone: "warn",
+            motif: "pulse",
+          },
+        ]}
+      />
 
       {/* Charts */}
       {/* Matches by Country Chart */}
@@ -176,9 +175,9 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Globe className="h-4 w-4 text-muted-foreground" />
-            Matches by Country
+            {t("matchesByCountry")}
           </CardTitle>
-          <CardDescription className="text-xs">Top countries by threat detections</CardDescription>
+          <CardDescription className="text-xs">{t("topCountriesByDetections")}</CardDescription>
         </CardHeader>
         <CardContent className="pt-0">
           <div className="h-[280px] w-full">
@@ -190,7 +189,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                   tick={{ fontSize: 10 }}
                   tickFormatter={(value) => value.toLocaleString()}
                 />
-                <YAxis 
+                <YAxis domain={[0, "dataMax"]}  
                   type="category" 
                   dataKey="name" 
                   tick={{ fontSize: 12 }} 
@@ -202,7 +201,7 @@ export function GeoChart({ data, loading = false }: GeoChartProps) {
                   labelStyle={tooltipStyle.labelStyle}
                   itemStyle={tooltipStyle.itemStyle}
                   cursor={{ fill: "rgba(63, 63, 70, 0.3)" }}
-                  formatter={(value: number) => [value.toLocaleString(), "Matches"]}
+                  formatter={(value: number) => [value.toLocaleString(), t("matchesLabel")]}
                   labelFormatter={(label) => {
                     const item = barData.find(d => d.name === label);
                     return item?.fullName || label;

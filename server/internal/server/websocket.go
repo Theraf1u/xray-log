@@ -280,6 +280,7 @@ func (s *Server) sendFullDashboardData(client *DashboardClient) {
 	if stats, err := s.storage.GetGlobalStats(ctx); err == nil {
 		connectedNodes := s.GetConnectedClients()
 		stats.NodesConnected = len(connectedNodes)
+		s.reconcileNodeTotals(stats)
 		client.mu.Lock()
 		client.Conn.WriteJSON(&DashboardUpdate{Type: "stats", Data: stats})
 		client.mu.Unlock()

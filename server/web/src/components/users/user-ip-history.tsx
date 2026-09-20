@@ -13,10 +13,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Globe, Wifi } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { UserIPHistory } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
+import { useTranslations } from "next-intl";
 
 // Country flag emoji from country code
 function getFlagEmoji(countryCode: string): string {
@@ -31,6 +32,7 @@ interface UserIPHistoryTableProps {
 }
 
 export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
+  const tc = useTranslations("common");
   const [history, setHistory] = useState<UserIPHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
         const data = await res.json();
         setHistory(data || []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(err instanceof Error ? err.message : tc("unknown"));
       } finally {
         setLoading(false);
       }
@@ -65,7 +67,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center py-8 text-muted-foreground">
-        <p>Failed to load IP history: {error}</p>
+        <p>{tc("ipHistoryLoadError")}: {error}</p>
       </div>
     );
   }
@@ -74,7 +76,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
         <Wifi className="h-8 w-8 opacity-30 mb-2" />
-        <p>No IP history recorded yet</p>
+        <p>{tc("noIpHistory")}</p>
       </div>
     );
   }
@@ -84,12 +86,12 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>IP Address</TableHead>
-            <TableHead className="hidden sm:table-cell">Location</TableHead>
-            <TableHead className="hidden md:table-cell">Node</TableHead>
-            <TableHead className="text-right">Requests</TableHead>
-            <TableHead className="hidden lg:table-cell">First Seen</TableHead>
-            <TableHead>Last Seen</TableHead>
+            <TableHead>{tc("ipAddress")}</TableHead>
+            <TableHead className="hidden sm:table-cell">{tc("location")}</TableHead>
+            <TableHead className="hidden md:table-cell">{tc("node")}</TableHead>
+            <TableHead className="text-right">{tc("requests")}</TableHead>
+            <TableHead className="hidden lg:table-cell">{tc("firstSeen")}</TableHead>
+            <TableHead>{tc("lastSeen")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -99,7 +101,7 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
                 {ip.country_code ? (
                   // Use pre-fetched geo data from backend
                   <span className="inline-flex items-center gap-1.5 font-mono text-sm">
-                    <span>{getFlagEmoji(ip.country_code)}</span>
+                    <span className="font-flag">{getFlagEmoji(ip.country_code)}</span>
                     <span>{ip.ip_address}</span>
                   </span>
                 ) : (
@@ -131,12 +133,12 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
               </TableCell>
               <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
                 {isValidDate(ip.first_seen)
-                  ? formatDistanceToNow(new Date(ip.first_seen), { addSuffix: true })
+                  ? formatDistanceToNowRu(new Date(ip.first_seen))
                   : "—"}
               </TableCell>
               <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                 {isValidDate(ip.last_seen)
-                  ? formatDistanceToNow(new Date(ip.last_seen), { addSuffix: true })
+                  ? formatDistanceToNowRu(new Date(ip.last_seen))
                   : "—"}
               </TableCell>
             </TableRow>

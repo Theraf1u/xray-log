@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MapPin, Wifi, Server, Shield, Smartphone } from "lucide-react";
 import { IPInfo } from "@/lib/types";
+import { useTranslations } from "next-intl";
 
 interface IPInfoBadgeProps {
   ip: string;
@@ -18,6 +19,7 @@ interface IPInfoBadgeProps {
 const ipInfoCache = new Map<string, IPInfo>();
 
 export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProps) {
+  const t = useTranslations("ipInfo");
   const [info, setInfo] = useState<IPInfo | null>(ipInfoCache.get(ip) || null);
   const [loading, setLoading] = useState(!ipInfoCache.has(ip));
 
@@ -66,7 +68,7 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
   if (showFull) {
     return (
       <div className={`flex items-center gap-2 ${className}`}>
-        <span className="text-lg">{flagEmoji}</span>
+        <span className="text-lg font-flag">{flagEmoji}</span>
         <div className="flex flex-col">
           <span className="text-sm font-medium">
             {info.city}, {info.country}
@@ -79,19 +81,19 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
           {info.mobile && (
             <Badge variant="outline" className="text-xs">
               <Smartphone className="h-3 w-3 mr-1" />
-              Mobile
+              {t("mobile")}
             </Badge>
           )}
           {info.proxy && (
             <Badge variant="destructive" className="text-xs">
               <Shield className="h-3 w-3 mr-1" />
-              VPN/Proxy
+              {t("vpnProxy")}
             </Badge>
           )}
           {info.hosting && (
             <Badge variant="secondary" className="text-xs">
               <Server className="h-3 w-3 mr-1" />
-              Hosting
+              {t("hosting")}
             </Badge>
           )}
         </div>
@@ -104,7 +106,7 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={`inline-flex items-center gap-1 cursor-help ${className}`}>
-            <span>{flagEmoji}</span>
+            <span className="font-flag">{flagEmoji}</span>
             <span className="text-xs">
               {info.city || info.country}
             </span>
@@ -129,9 +131,9 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
               </div>
             )}
             <div className="flex gap-1 mt-1">
-              {info.mobile && <Badge variant="outline" className="text-xs">Mobile</Badge>}
-              {info.proxy && <Badge variant="destructive" className="text-xs">VPN/Proxy</Badge>}
-              {info.hosting && <Badge variant="secondary" className="text-xs">Datacenter</Badge>}
+              {info.mobile && <Badge variant="outline" className="text-xs">{t("mobile")}</Badge>}
+              {info.proxy && <Badge variant="destructive" className="text-xs">{t("vpnProxy")}</Badge>}
+              {info.hosting && <Badge variant="secondary" className="text-xs">{t("datacenter")}</Badge>}
             </div>
             <div className="text-xs text-muted-foreground mt-1 font-mono">
               {ip}

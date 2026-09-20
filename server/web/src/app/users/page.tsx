@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useWsUsers, useWsStats } from "@/contexts/websocket-context";
+import { authFetch } from "@/contexts/auth-context";
 import { UsersTable } from "@/components/users/users-table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,8 +33,38 @@ function calculateRiskScore(user: { total_requests: number; blacklist_hits: numb
 export default function UsersPage() {
   const t = useTranslations("users");
   const tCommon = useTranslations("common");
-  const { users, loading, connected } = useWsUsers();
+  // The dashboard WebSocket ships a fixed top-500 slice (GetAllUsers(ctx, 500)
+  // in websocket.go) because broadcasting every row several times a minute
+  // would be wasteful. That slice is fine for the live dashboard, but this
+  // page is the full directory, and counting it gave a permanent "500" no
+  // matter how many users exist. So fetch the real list over HTTP — that
+  // endpoint is cached server-side — and keep the socket as the cold-start
+  // fallback.
+  const { users: liveUsers, loading, connected } = useWsUsers();
+  const [fullUsers, setFullUsers] = useState<typeof liveUsers | null>(null);
   const { stats } = useWsStats();
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await authFetch("/api/users/all?limit=10000");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (active && Array.isArray(data)) setFullUsers(data);
+      } catch {
+        // Keep whatever the socket already gave us.
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const users = fullUsers ?? liveUsers;
 
   // Calculate risk groups
   const { highRisk, mediumRisk, blacklistUsers, totalRequests, totalBlacklistHits } = useMemo(() => {

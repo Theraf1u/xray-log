@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldAlert, RefreshCw, Download, Globe, Swords } from "lucide-react";
@@ -15,8 +14,7 @@ import { AttacksPanel } from "./attacks-panel";
 
 export function ThreatIntelPage() {
   const t = useTranslations("threatIntel");
-  const tCommon = useTranslations("common");
-  const { threatIntel, loading: wsLoading, connected } = useWsThreatIntel();
+  const { threatIntel, loading: wsLoading } = useWsThreatIntel();
   const {
     feeds,
     timeStats,
@@ -54,26 +52,21 @@ export function ThreatIntelPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* The connected/disconnected badge duplicated the WebSocket tile
+          already in the header, so it is gone; the feed cadence became a
+          plain hint under the title instead of competing chrome. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
-            Threat Intelligence
+          <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
+            <ShieldAlert className="h-5 w-5 text-destructive sm:h-6 sm:w-6" />
+            {t("title")}
           </h2>
-          <p className="text-sm text-muted-foreground">
-            Real-time threat detection from open source feeds
-          </p>
+          <p className="text-sm text-muted-foreground">{t("description")}</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant={connected ? "default" : "secondary"} className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-gray-400"}`} />
-            {connected ? tCommon("live") : tCommon("offline")}
-          </Badge>
-          <Badge variant="outline" className="flex items-center gap-1.5">
-            <RefreshCw className="h-3 w-3" />
-            <span className="hidden sm:inline">{t("feedsEvery")}</span> 6h
-          </Badge>
-        </div>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <RefreshCw className="h-3 w-3" />
+          {t("feedsEvery")} 6 {t("hoursShort")}
+        </span>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

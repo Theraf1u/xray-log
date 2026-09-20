@@ -98,6 +98,7 @@ type UsersResponse struct {
 type HwidDevice struct {
 	Hwid        string    `json:"hwid"`
 	UserUUID    string    `json:"userUuid"`
+	UserID      int64     `json:"userId"`
 	Platform    *string   `json:"platform"` // iOS, Android, Windows, etc.
 	OSVersion   *string   `json:"osVersion"`
 	DeviceModel *string   `json:"deviceModel"`

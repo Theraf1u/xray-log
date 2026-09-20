@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Swords, RefreshCw, Target, Crosshair, Check } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { StatCard, StatCardGrid } from "./stat-card";
 
 // Incident = one attack detection. Shape mirrors /api/threatintel/attacks.
@@ -49,9 +50,9 @@ const severityBadge: Record<string, string> = {
 };
 
 const typeLabel: Record<string, { label: string; icon: React.ReactNode }> = {
-  port_scan: { label: "Port scan", icon: <Crosshair className="h-3.5 w-3.5" /> },
-  abuse_port_flood: { label: "Brute-force / flood", icon: <Swords className="h-3.5 w-3.5" /> },
-  burst_scan: { label: "Burst scan", icon: <Target className="h-3.5 w-3.5" /> },
+  port_scan: { label: "portScan", icon: <Crosshair className="h-3.5 w-3.5" /> },
+  abuse_port_flood: { label: "bruteForce", icon: <Swords className="h-3.5 w-3.5" /> },
+  burst_scan: { label: "burstScan", icon: <Target className="h-3.5 w-3.5" /> },
 };
 
 const SINCE_OPTIONS = [
@@ -62,6 +63,7 @@ const SINCE_OPTIONS = [
 ];
 
 export function AttacksPanel() {
+  const at = useTranslations("attacksPanel");
   const [since, setSince] = useState("24h");
   const [attacks, setAttacks] = useState<Attack[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -131,7 +133,7 @@ export function AttacksPanel() {
       <StatCardGrid columns={4}>
         <StatCard
           icon={<Swords className="h-4 w-4" />}
-          label="Active attacks"
+          label={at("activeAttacks")}
           value={list.length}
           subValue={`${since} window`}
           variant={list.length > 0 ? "danger" : "muted"}
@@ -139,23 +141,23 @@ export function AttacksPanel() {
         />
         <StatCard
           icon={<Target className="h-4 w-4" />}
-          label="Critical + High"
+          label={at("criticalPlusHigh")}
           value={critical + high}
           subValue={`${critical} crit · ${high} high`}
           variant="warning"
         />
         <StatCard
           icon={<Crosshair className="h-4 w-4" />}
-          label="Port scans"
+          label={at("portScans")}
           value={uniqScans}
           subValue={`${uniqFloods} brute-force floods`}
           variant="info"
         />
         <StatCard
           icon={<Swords className="h-4 w-4" />}
-          label="Distinct attackers"
+          label={at("distinctAttackers")}
           value={uniqUsers}
-          subValue="Unique users"
+          subValue={at("uniqueUsers")}
           variant="info"
         />
       </StatCardGrid>
@@ -166,7 +168,7 @@ export function AttacksPanel() {
             <div>
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Swords className="h-4 w-4 text-muted-foreground" />
-                Attacks originating from VPN clients
+                {at("subtitle")}
               </CardTitle>
               <CardDescription className="text-xs">
                 Only hostile patterns (port scan / brute-force). CDN / normal browsing is filtered out.
@@ -187,7 +189,7 @@ export function AttacksPanel() {
               </Select>
               <Button variant="outline" size="sm" onClick={fetchAttacks} className="gap-1">
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh
+                {at("refresh")}
               </Button>
             </div>
           </div>
@@ -199,19 +201,19 @@ export function AttacksPanel() {
                 <Swords className="h-8 w-8 text-emerald-500" />
               </div>
               <p className="text-sm font-medium">No attacks in the last {since}</p>
-              <p className="text-xs">Scanning / brute-force detectors haven't fired</p>
+              <p className="text-xs">{at("empty")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">When</TableHead>
-                    <TableHead className="w-[170px]">Type</TableHead>
-                    <TableHead className="w-[200px]">User</TableHead>
-                    <TableHead>Target</TableHead>
-                    <TableHead className="w-[110px]">Severity</TableHead>
-                    <TableHead className="w-[90px] text-right">Action</TableHead>
+                    <TableHead className="w-[120px]">{at("when")}</TableHead>
+                    <TableHead className="w-[170px]">{at("type")}</TableHead>
+                    <TableHead className="w-[200px]">{at("user")}</TableHead>
+                    <TableHead>{at("target")}</TableHead>
+                    <TableHead className="w-[110px]">{at("severity")}</TableHead>
+                    <TableHead className="w-[90px] text-right">{at("action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -230,7 +232,7 @@ export function AttacksPanel() {
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(a.detected_at), { addSuffix: true })}
+                          {formatDistanceToNowRu(new Date(a.detected_at))}
                         </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center gap-1.5 text-xs">

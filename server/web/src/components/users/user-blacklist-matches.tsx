@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,9 +21,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, ShieldAlert } from "lucide-react";
-import { format } from "date-fns";
-import { isValidDate } from "@/lib/utils/date";
+
+import { isValidDate, formatRu } from "@/lib/utils/date";
 import { authFetch } from "@/contexts/auth-context";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
 import { BlacklistMatchInfo, TimeRange } from "@/lib/types";
 
 interface PaginatedBlacklistResponse {
@@ -38,11 +40,12 @@ interface UserBlacklistMatchesProps {
 }
 
 export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
+  const tc = useTranslations("common");
   const [data, setData] = useState<PaginatedBlacklistResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [period, setPeriod] = useState<TimeRange>("24h");
-  const pageSize = 20;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -82,7 +85,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
   if (!data || data.matches.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
-        No blacklist matches found for the selected period
+        {tc("noBlacklistMatchesForPeriod")}
       </div>
     );
   }
@@ -93,7 +96,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
         <div className="flex items-center gap-2">
           <ShieldAlert className="h-4 w-4 text-destructive" />
           <span className="text-sm text-muted-foreground">
-            {data.total} blocked requests
+            {tc("blockedRequestsCount", { count: data.total })}
           </span>
         </div>
         <Select value={period} onValueChange={(v) => setPeriod(v as TimeRange)}>
@@ -101,11 +104,11 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1h">Last hour</SelectItem>
-            <SelectItem value="6h">Last 6h</SelectItem>
-            <SelectItem value="24h">Last 24h</SelectItem>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
+            <SelectItem value="1h">{tc("period1h")}</SelectItem>
+            <SelectItem value="6h">{tc("period6h")}</SelectItem>
+            <SelectItem value="24h">{tc("period24h")}</SelectItem>
+            <SelectItem value="7d">{tc("period7d")}</SelectItem>
+            <SelectItem value="30d">{tc("period30d")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -114,11 +117,11 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Node</TableHead>
-              <TableHead>Source IP</TableHead>
-              <TableHead>Destination</TableHead>
-              <TableHead>Matched Rule</TableHead>
+              <TableHead>{tc("time")}</TableHead>
+              <TableHead>{tc("node")}</TableHead>
+              <TableHead>{tc("sourceIp")}</TableHead>
+              <TableHead>{tc("destination")}</TableHead>
+              <TableHead>{tc("matchedRule")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -126,7 +129,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
               <TableRow key={`${match.timestamp}-${match.destination}-${idx}`}>
                 <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
                   {isValidDate(match.timestamp)
-                    ? format(new Date(match.timestamp), "MMM d, HH:mm:ss")
+                    ? formatRu(new Date(match.timestamp), "MMM d, HH:mm:ss")
                     : "—"
                   }
                 </TableCell>
@@ -150,9 +153,12 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
 
       {data.total_pages > 1 && (
         <div className="flex items-center justify-between pt-2">
-          <span className="text-sm text-muted-foreground">
-            Page {data.page} of {data.total_pages}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              {tc("pageOf", { page: data.page, total: data.total_pages })}
+            </span>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(1); }} disabled={loading} />
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -161,7 +167,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
               disabled={page === 1 || loading}
             >
               <ChevronLeft className="h-4 w-4" />
-              Previous
+              {tc("previous")}
             </Button>
             <Button
               variant="outline"
@@ -169,7 +175,7 @@ export function UserBlacklistMatches({ email }: UserBlacklistMatchesProps) {
               onClick={() => setPage(p => Math.min(data.total_pages, p + 1))}
               disabled={page >= data.total_pages || loading}
             >
-              Next
+              {tc("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

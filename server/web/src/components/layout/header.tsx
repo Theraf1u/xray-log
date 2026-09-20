@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network, Route } from "lucide-react";
-import { useAuth } from "@/contexts/auth-context";
+import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network, Route, FileClock, Database, Sparkles, Settings } from "lucide-react";
+import { ServiceStatusTiles } from "@/components/layout/service-status-tiles";
+import { useAiChatVisibility } from "@/lib/ai-chat-visibility";
+import { authFetch, useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -16,16 +18,63 @@ export function Header() {
   const { isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const t = useTranslations("nav");
+  const tTiles = useTranslations("serviceTiles");
+  const { hidden: aiHidden, setHidden: setAiHidden } = useAiChatVisibility();
+  const [storage, setStorage] = useState<{
+    database_bytes: number;
+    wal_bytes: number;
+    chronology_bytes: number;
+    analyzer_bytes: number;
+    disk_total_bytes: number;
+    disk_free_bytes: number;
+    percent: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let active = true;
+    const loadStorage = async () => {
+      try {
+        const response = await authFetch("/api/storage");
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active) setStorage(data);
+      } catch {
+        // The header remains usable if storage statistics are temporarily unavailable.
+      }
+    };
+
+    loadStorage();
+    const timer = window.setInterval(loadStorage, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [isAuthenticated]);
+
+  const formatBytes = (bytes: number) => {
+    const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+    let value = Math.max(0, bytes);
+    let unit = 0;
+    while (value >= 1000 && unit < units.length - 1) {
+      value /= 1000;
+      unit++;
+    }
+    return `${value.toLocaleString("ru-RU", { maximumFractionDigits: unit >= 3 ? 2 : 1 })} ${units[unit]}`;
+  };
 
   const navItems = [
     { href: "/dashboard", label: t("dashboard") },
     { href: "/nodes", label: t("nodes") },
     { href: "/users", label: t("users") },
+    { href: "/export", label: t("export"), icon: FileClock },
     { href: "/blacklist", label: t("blacklist") },
     { href: "/threatintel", label: t("threatIntel"), icon: ShieldAlert },
     { href: "/remnawave", label: t("remnawave"), icon: Smartphone },
     { href: "/correlation", label: t("correlation"), icon: Network },
     { href: "/bridge-users", label: t("bridgeUsers"), icon: Route },
+    { href: "/admin", label: t("admin"), icon: Settings },
   ];
 
   // Don't show header on login page
@@ -39,31 +88,46 @@ export function Header() {
         <Link href="/dashboard" className="flex items-center gap-2 font-bold">
           <Activity className="h-5 w-5 text-primary" />
           <span className="hidden sm:inline">{t("appName")}</span>
-          <span className="sm:hidden">Xray</span>
+          <span className="sm:hidden">XRAY</span>
         </Link>
 
-        {/* Desktop navigation */}
-        <nav className="ml-8 hidden md:flex items-center gap-6">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "text-sm font-medium transition-colors hover:text-primary flex items-center gap-1",
-                pathname === item.href
-                  ? "text-foreground"
-                  : "text-muted-foreground"
-              )}
-            >
-              {item.icon && <item.icon className="h-3.5 w-3.5" />}
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
         <div className="ml-auto flex items-center gap-2">
+          {/* Subsystem readings and disk usage share one piece of glass with
+              hairline separators, so the header carries a single object
+              instead of five pills of five different widths. */}
+          <div className="glass hidden items-center gap-1 p-1 xl:flex">
+            <ServiceStatusTiles />
+            {storage && (
+              <span
+                className="ml-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+                title={`Analyzer: ${formatBytes(storage.analyzer_bytes)}; PostgreSQL: ${formatBytes(storage.database_bytes)}; WAL: ${formatBytes(storage.wal_bytes)}`}
+              >
+                {formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)}
+              </span>
+            )}
+          </div>
+          {storage && (
+            <span
+              className="hidden sm:inline-flex xl:hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+              title={`Analyzer: ${formatBytes(storage.analyzer_bytes)}; PostgreSQL: ${formatBytes(storage.database_bytes)}; хронология: ${formatBytes(storage.chronology_bytes)}; WAL: ${formatBytes(storage.wal_bytes)}; свободно на диске: ${formatBytes(storage.disk_free_bytes)}`}
+            >
+              <Database className="h-3.5 w-3.5 text-primary" />
+              {formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)} / {storage.percent.toLocaleString("ru-RU", { maximumFractionDigits: 3 })}%
+            </span>
+          )}
           <LanguageSwitcher />
           <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setAiHidden(!aiHidden)}
+            title={aiHidden ? tTiles("showAiChat") : tTiles("hideAiChat")}
+            aria-pressed={!aiHidden}
+            className={aiHidden ? "text-muted-foreground" : "text-purple-500"}
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
           {isAuthenticated && (
             <Button
               variant="ghost"
@@ -88,6 +152,31 @@ export function Header() {
         </div>
       </div>
 
+      {/* Desktop navigation: two balanced rows of independent buttons */}
+      {/* One segmented control on a single piece of glass.
+          The old 5-column grid forced nine items into ten cells and left the
+          tenth visibly empty, and gave every destination an identical bordered
+          box — no hierarchy, maximum chrome. Pills wrap naturally, so the row
+          is always full whatever the item count. */}
+      <nav className="hidden px-4 pb-3 md:block md:px-8">
+        <div className="glass flex flex-wrap items-center gap-1 p-1">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              data-active={pathname === item.href}
+              className={cn(
+                "seg-item flex h-8 flex-1 items-center justify-center gap-1.5 px-3 text-[13px] font-medium whitespace-nowrap",
+                pathname === item.href ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {item.icon && <item.icon className="h-3.5 w-3.5 shrink-0" />}
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      </nav>
+
       {/* Mobile navigation */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t bg-background">
@@ -108,6 +197,13 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
+            <ServiceStatusTiles className="flex-wrap" />
+            {storage && (
+              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                <Database className="h-4 w-4 text-primary" />
+                <span>{formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)} / {storage.percent.toLocaleString("ru-RU", { maximumFractionDigits: 3 })}%</span>
+              </div>
+            )}
             <div className="pt-2 border-t">
               {isAuthenticated && (
                 <Button

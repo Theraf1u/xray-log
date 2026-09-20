@@ -13,19 +13,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { useTranslations } from "next-intl";
+
+import { formatDistanceToNowRu, formatRu } from "@/lib/utils/date";
 import { isValidDate } from "@/lib/utils/date";
 import { PaginatedAlertsResponse } from "@/lib/types";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
 
 interface UserAlertsTableProps {
   email: string;
 }
 
 export function UserAlertsTable({ email }: UserAlertsTableProps) {
+  const tc = useTranslations("common");
   const [data, setData] = useState<PaginatedAlertsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -61,7 +65,7 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
   if (!data || data.alerts.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
-        No alerts for this user
+        {tc("noAlertsForUser")}
       </div>
     );
   }
@@ -71,7 +75,7 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-destructive" />
         <span className="text-sm text-muted-foreground">
-          {data.total} total alerts
+          {tc("totalAlertsCount", { count: data.total })}
         </span>
       </div>
 
@@ -79,11 +83,11 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Time</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Node</TableHead>
-              <TableHead>Message</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead>{tc("time")}</TableHead>
+              <TableHead>{tc("type")}</TableHead>
+              <TableHead>{tc("node")}</TableHead>
+              <TableHead>{tc("message")}</TableHead>
+              <TableHead>{tc("status")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -91,8 +95,8 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
               <TableRow key={alert.id}>
                 <TableCell className="text-sm whitespace-nowrap">
                   {isValidDate(alert.created_at) ? (
-                    <span title={format(new Date(alert.created_at), "PPpp")}>
-                      {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
+                    <span title={formatRu(new Date(alert.created_at), "PPpp")}>
+                      {formatDistanceToNowRu(new Date(alert.created_at))}
                     </span>
                   ) : "—"}
                 </TableCell>
@@ -107,9 +111,9 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
                 </TableCell>
                 <TableCell>
                   {alert.sent ? (
-                    <Badge variant="secondary">Sent</Badge>
+                    <Badge variant="secondary">{tc("sent")}</Badge>
                   ) : (
-                    <Badge variant="outline">Pending</Badge>
+                    <Badge variant="outline">{tc("pending")}</Badge>
                   )}
                 </TableCell>
               </TableRow>
@@ -120,9 +124,12 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
 
       {data.total_pages > 1 && (
         <div className="flex items-center justify-between pt-2">
-          <span className="text-sm text-muted-foreground">
-            Page {data.page} of {data.total_pages}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              {tc("pageOf", { page: data.page, total: data.total_pages })}
+            </span>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(1); }} disabled={loading} />
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -131,7 +138,7 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
               disabled={page === 1 || loading}
             >
               <ChevronLeft className="h-4 w-4" />
-              Previous
+              {tc("previous")}
             </Button>
             <Button
               variant="outline"
@@ -139,7 +146,7 @@ export function UserAlertsTable({ email }: UserAlertsTableProps) {
               onClick={() => setPage(p => Math.min(data.total_pages, p + 1))}
               disabled={page >= data.total_pages || loading}
             >
-              Next
+              {tc("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

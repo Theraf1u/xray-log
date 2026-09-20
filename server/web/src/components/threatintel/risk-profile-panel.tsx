@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,7 @@ import {
   Activity
 } from "lucide-react";
 import { UserRiskSummary, UserRiskProfile, RiskLevel } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { StatCard, StatCardGrid } from "./stat-card";
 
 interface RiskProfilePanelProps {
@@ -43,25 +44,25 @@ const riskLevelConfig: Record<RiskLevel, {
     color: "text-green-600", 
     bgColor: "bg-green-100 dark:bg-green-900/30",
     icon: <ShieldCheck className="h-4 w-4" />,
-    label: "Low Risk"
+    label: "low"
   },
   medium: { 
     color: "text-yellow-600", 
     bgColor: "bg-yellow-100 dark:bg-yellow-900/30",
     icon: <Shield className="h-4 w-4" />,
-    label: "Medium Risk"
+    label: "medium"
   },
   high: { 
     color: "text-orange-600", 
     bgColor: "bg-orange-100 dark:bg-orange-900/30",
     icon: <ShieldAlert className="h-4 w-4" />,
-    label: "High Risk"
+    label: "high"
   },
   critical: { 
     color: "text-red-600", 
     bgColor: "bg-red-100 dark:bg-red-900/30",
     icon: <AlertTriangle className="h-4 w-4" />,
-    label: "Critical Risk"
+    label: "critical"
   },
 };
 
@@ -98,6 +99,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const rp = useTranslations("riskProfiles");
   const config = riskLevelConfig[profile.risk_level] || riskLevelConfig.low;
   const trend = trendIcons[profile.trend_direction] || trendIcons.stable;
 
@@ -113,12 +115,15 @@ function UserRiskCard({ profile, expanded, onToggle }: {
               <CardTitle className="text-sm font-medium">{profile.username || profile.user_email}</CardTitle>
               <div className="flex items-center gap-2 mt-1">
                 <Badge variant="outline" className={config.color}>
-                  {config.label}
+                  {rp(config.label)}
                 </Badge>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   {trend}
-                  {profile.trend_direction === "up" ? "Increasing" : 
-                   profile.trend_direction === "down" ? "Decreasing" : "Stable"}
+                  {profile.trend_direction === "up"
+                    ? rp("trendUp")
+                    : profile.trend_direction === "down"
+                      ? rp("trendDown")
+                      : rp("trendFlat")}
                 </span>
               </div>
             </div>
@@ -126,7 +131,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
           <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-2xl font-bold">{profile.risk_score}</div>
-              <div className="text-xs text-muted-foreground">Risk Score</div>
+              <div className="text-xs text-muted-foreground">{rp("riskScore")}</div>
             </div>
             <Button variant="ghost" size="sm" onClick={onToggle}>
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -142,28 +147,28 @@ function UserRiskCard({ profile, expanded, onToggle }: {
               <Activity className="h-4 w-4 text-muted-foreground" />
               <div>
                 <div className="text-sm font-medium">{profile.total_matches}</div>
-                <div className="text-xs text-muted-foreground">Total Matches</div>
+                <div className="text-xs text-muted-foreground">{rp("totalMatches")}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Globe className="h-4 w-4 text-muted-foreground" />
               <div>
                 <div className="text-sm font-medium">{profile.unique_countries}</div>
-                <div className="text-xs text-muted-foreground">Countries</div>
+                <div className="text-xs text-muted-foreground">{rp("countries")}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
               <div>
                 <div className="text-sm font-medium">{profile.anomaly_count}</div>
-                <div className="text-xs text-muted-foreground">Anomalies</div>
+                <div className="text-xs text-muted-foreground">{rp("anomalies")}</div>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <div>
                 <div className="text-sm font-medium">{profile.days_active}</div>
-                <div className="text-xs text-muted-foreground">Days Active</div>
+                <div className="text-xs text-muted-foreground">{rp("daysActive")}</div>
               </div>
             </div>
           </div>
@@ -171,7 +176,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
           {/* Threats by type */}
           {profile.threats_by_type && Object.keys(profile.threats_by_type).length > 0 && (
             <div className="mb-4">
-              <div className="text-sm font-medium mb-2">Threats by Category</div>
+              <div className="text-sm font-medium mb-2">{rp("threatsByCategory")}</div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(profile.threats_by_type).map(([type, count]) => (
                   <Badge key={type} variant="secondary">
@@ -185,7 +190,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
           {/* Risk factors */}
           {profile.risk_factors && profile.risk_factors.length > 0 && (
             <div>
-              <div className="text-sm font-medium mb-2">Risk Factors</div>
+              <div className="text-sm font-medium mb-2">{rp("riskFactors")}</div>
               <div className="space-y-2">
                 {profile.risk_factors.map((factor, idx) => (
                   <div key={idx} className="flex items-center justify-between text-sm p-2 bg-muted/50 rounded">
@@ -200,7 +205,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
           {/* Top domains */}
           {profile.top_domains && profile.top_domains.length > 0 && (
             <div className="mt-4">
-              <div className="text-sm font-medium mb-2">Top Domains</div>
+              <div className="text-sm font-medium mb-2">{rp("topDomains")}</div>
               <div className="flex flex-wrap gap-2">
                 {profile.top_domains.map((domain, idx) => (
                   <Badge key={idx} variant="outline" className="font-mono text-xs">
@@ -212,7 +217,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
           )}
 
           <div className="mt-4 text-xs text-muted-foreground">
-            Last activity: {profile.last_activity ? formatDistanceToNow(new Date(profile.last_activity), { addSuffix: true }) : "N/A"}
+            Last activity: {profile.last_activity ? formatDistanceToNowRu(new Date(profile.last_activity)) : "N/A"}
           </div>
         </CardContent>
       )}
@@ -221,6 +226,7 @@ function UserRiskCard({ profile, expanded, onToggle }: {
 }
 
 export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalculate }: RiskProfilePanelProps) {
+  const rp = useTranslations("riskProfiles");
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [recalculating, setRecalculating] = useState(false);
 
@@ -257,14 +263,14 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-muted-foreground">
             <ShieldAlert className="h-5 w-5" />
-            User Risk Profiles
+            {rp("title")}
           </CardTitle>
-          <CardDescription>No risk profile data available</CardDescription>
+          <CardDescription>{rp("noData")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center h-[150px] text-muted-foreground gap-2">
             <Shield className="h-12 w-12 opacity-20" />
-            <p className="text-center">Risk profiles will be calculated<br/>once enough user data is collected</p>
+            <p className="text-center">{rp("willBeCalculated")}<br/>once enough user data is collected</p>
           </div>
         </CardContent>
       </Card>
@@ -279,30 +285,30 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
       <StatCardGrid columns={4}>
         <StatCard
           icon={<ShieldAlert className="h-4 w-4" />}
-          label="High Risk Users"
+          label={rp("highRiskUsers")}
           value={highRiskCount}
-          subValue="Critical + High risk"
+          subValue={rp("criticalPlusHigh")}
           variant="danger"
         />
         <StatCard
           icon={<Shield className="h-4 w-4" />}
-          label="Medium Risk"
+          label={rp("medium")}
           value={data.by_risk_level?.medium || 0}
-          subValue="Needs monitoring"
+          subValue={rp("needsMonitoring")}
           variant="warning"
         />
         <StatCard
           icon={<ShieldCheck className="h-4 w-4" />}
-          label="Low Risk"
+          label={rp("low")}
           value={data.by_risk_level?.low || 0}
-          subValue="Normal behavior"
+          subValue={rp("normalBehavior")}
           variant="success"
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4" />}
-          label="Escalations (24h)"
+          label={rp("escalations24h")}
           value={data.recent_escalations || 0}
-          subValue="Increased risk"
+          subValue={rp("increasedRisk")}
           variant="info"
         />
       </StatCardGrid>
@@ -314,7 +320,7 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
             <div>
               <CardTitle className="flex items-center gap-2">
                 <ShieldAlert className="h-5 w-5 text-muted-foreground" />
-                User Risk Profiles
+                {rp("title")}
               </CardTitle>
               <CardDescription>
                 {data.total_users} users analyzed • Average score: {data.average_risk_score?.toFixed(1) || 0}
@@ -324,12 +330,12 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
               {onRefresh && (
                 <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1">
                   <RefreshCw className="h-4 w-4" />
-                  Refresh
+                  {rp("refresh")}
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={recalculating} className="gap-1">
                 <RefreshCw className={`h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
-                Recalculate All
+                {rp("recalculateAll")}
               </Button>
             </div>
           </div>
@@ -341,7 +347,7 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
             <div>
               <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                High Risk Users
+                {rp("highRiskUsers")}
               </h3>
               {data.high_risk_users.map((profile) => (
                 <UserRiskCard
@@ -359,8 +365,8 @@ export function RiskProfilePanel({ data, loading = false, onRefresh, onRecalcula
               <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
                 <ShieldCheck className="h-8 w-8 text-emerald-500" />
               </div>
-              <p className="font-medium">No high-risk users detected</p>
-              <p className="text-sm">All users have risk scores below 50</p>
+              <p className="font-medium">{rp("noHighRisk")}</p>
+              <p className="text-sm">{rp("allBelow50")}</p>
             </div>
           )}
         </CardContent>

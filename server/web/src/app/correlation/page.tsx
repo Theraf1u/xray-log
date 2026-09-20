@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { AnimatedNumber } from "@/components/ui/animated-number";
@@ -91,6 +93,7 @@ interface SharedHWIDInfo {
 }
 
 export default function CorrelationPage() {
+  const tc = useTranslations("correlation");
   const [stats, setStats] = useState<CorrelationStats | null>(null);
   const [profiles, setProfiles] = useState<UserAIProfile[]>([]);
   const [sharedIPs, setSharedIPs] = useState<SharedIPInfo[]>([]);
@@ -166,11 +169,11 @@ export default function CorrelationPage() {
   }, [fetchData]);
 
   const getRiskBadge = (score: number) => {
-    if (score >= 70) return <Badge variant="destructive">Critical ({score})</Badge>;
-    if (score >= 50) return <Badge className="bg-orange-500">High ({score})</Badge>;
-    if (score >= 30) return <Badge className="bg-yellow-500">Medium ({score})</Badge>;
-    if (score >= 10) return <Badge variant="secondary">Low ({score})</Badge>;
-    return <Badge variant="outline">Minimal ({score})</Badge>;
+    if (score >= 70) return <Badge variant="destructive">{tc("riskCritical")} ({score})</Badge>;
+    if (score >= 50) return <Badge className="bg-orange-500">{tc("riskHigh")} ({score})</Badge>;
+    if (score >= 30) return <Badge className="bg-yellow-500">{tc("riskMedium")} ({score})</Badge>;
+    if (score >= 10) return <Badge variant="secondary">{tc("riskLow")} ({score})</Badge>;
+    return <Badge variant="outline">{tc("riskMinimal")} ({score})</Badge>;
   };
 
   const formatBytes = (bytes: number) => {
@@ -193,7 +196,7 @@ export default function CorrelationPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6 space-y-6">
+      <div className="p-4 md:p-8 space-y-6">
         <Skeleton className="h-12 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
@@ -206,82 +209,53 @@ export default function CorrelationPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-8 space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">User Correlation Analysis</h1>
-          <p className="text-muted-foreground">
-            AI-powered user behavior analysis and fraud detection
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{tc("title")}</h2>
+          <p className="text-sm text-muted-foreground">{tc("subtitle")}</p>
         </div>
-        <Button onClick={() => fetchData(true)} disabled={refreshing}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
+        <Button variant="outline" size="sm" onClick={() => fetchData(true)} disabled={refreshing}>
+          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          {tc("refresh")}
         </Button>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Shared IPs</CardTitle>
-            <Network className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={stats?.shared_ips || 0} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              <AnimatedNumber value={stats?.users_with_shared_ip || 0} /> users affected
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Shared HWIDs</CardTitle>
-            <Smartphone className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-500">
-              <AnimatedNumber value={stats?.shared_hwids || 0} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              <AnimatedNumber value={stats?.users_with_shared_hwid || 0} /> users affected
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Fingerprints</CardTitle>
-            <Fingerprint className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={stats?.total_fingerprints || 0} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Unique IP+HWID combinations
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">User Clusters</CardTitle>
-            <Link2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={stats?.total_clusters || 0} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              <AnimatedNumber value={stats?.users_in_clusters || 0} /> users linked
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Four separate Cards became one rail: same four numbers, a third of
+          the height, one container instead of four. */}
+      <StatRail
+        items={[
+          {
+            key: "sharedIps",
+            motif: "nodes",
+            label: tc("sharedIps"),
+            value: stats?.shared_ips || 0,
+            hint: tc("usersAffected", { count: stats?.users_with_shared_ip || 0 }),
+          },
+          {
+            key: "sharedHwids",
+            motif: "link",
+            label: tc("sharedHwids"),
+            value: stats?.shared_hwids || 0,
+            dot: (stats?.shared_hwids || 0) > 0 ? "warn" : undefined,
+            hint: tc("usersAffected", { count: stats?.users_with_shared_hwid || 0 }),
+          },
+          {
+            key: "fingerprints",
+            motif: "database",
+            label: tc("fingerprints"),
+            value: stats?.total_fingerprints || 0,
+            hint: tc("fingerprintsHint"),
+          },
+          {
+            key: "clusters",
+            motif: "users",
+            label: tc("clusters"),
+            value: stats?.total_clusters || 0,
+            hint: tc("usersLinked", { count: stats?.users_in_clusters || 0 }),
+          },
+        ]}
+      />
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="abuse" className="space-y-4">
@@ -289,8 +263,8 @@ export default function CorrelationPage() {
           <TabsList className="inline-flex w-auto min-w-full sm:w-auto">
             <TabsTrigger value="abuse" className="flex items-center gap-2 whitespace-nowrap">
               <Shield className="h-4 w-4" />
-              <span className="hidden sm:inline">Abuse Detection</span>
-              <span className="sm:hidden">Abuse</span>
+              <span className="hidden sm:inline">{tc("tabAbuse")}</span>
+              <span className="sm:hidden">{tc("tabAbuseShort")}</span>
               {(ipAbuseUsers.length > 0 || hwidAbuseUsers.length > 0) && (
                 <Badge variant="destructive" className="ml-1">
                   {ipAbuseUsers.length + hwidAbuseUsers.length}
@@ -299,18 +273,18 @@ export default function CorrelationPage() {
             </TabsTrigger>
             <TabsTrigger value="profiles" className="whitespace-nowrap">
               <Users className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">AI Profiles</span>
-              <span className="sm:hidden">Profiles</span>
+              <span className="hidden sm:inline">{tc("tabProfiles")}</span>
+              <span className="sm:hidden">{tc("tabProfilesShort")}</span>
             </TabsTrigger>
             <TabsTrigger value="shared-ips" className="whitespace-nowrap">
               <Network className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Shared IPs</span>
-              <span className="sm:hidden">IPs</span>
+              <span className="hidden sm:inline">{tc("tabSharedIps")}</span>
+              <span className="sm:hidden">{tc("tabSharedIpsShort")}</span>
             </TabsTrigger>
             <TabsTrigger value="shared-hwids" className="whitespace-nowrap">
               <Smartphone className="mr-2 h-4 w-4" />
-              <span className="hidden sm:inline">Shared HWIDs</span>
-              <span className="sm:hidden">HWIDs</span>
+              <span className="hidden sm:inline">{tc("tabSharedHwids")}</span>
+              <span className="sm:hidden">{tc("tabSharedHwidsShort")}</span>
             </TabsTrigger>
           </TabsList>
         </div>
@@ -326,15 +300,13 @@ export default function CorrelationPage() {
         <TabsContent value="profiles" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>User AI Profiles</CardTitle>
-              <CardDescription>
-                Comprehensive analysis profiles for fraud detection and AI processing
-              </CardDescription>
+              <CardTitle>{tc("aiProfiles")}</CardTitle>
+              <CardDescription>{tc("aiProfilesDesc")}</CardDescription>
               <div className="flex gap-4 mt-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search by email..."
+                    placeholder={tc("searchByEmail")}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-8"
@@ -345,11 +317,11 @@ export default function CorrelationPage() {
                   value={minRiskScore}
                   onChange={(e) => setMinRiskScore(Number(e.target.value))}
                 >
-                  <option value={0}>All Risk Levels</option>
-                  <option value={10}>Risk ≥ 10</option>
-                  <option value={30}>Risk ≥ 30</option>
-                  <option value={50}>Risk ≥ 50</option>
-                  <option value={70}>Risk ≥ 70</option>
+                  <option value={0}>{tc("allRiskLevels")}</option>
+                  <option value={10}>{tc("riskAtLeast", { score: 10 })}</option>
+                  <option value={30}>{tc("riskAtLeast", { score: 30 })}</option>
+                  <option value={50}>{tc("riskAtLeast", { score: 50 })}</option>
+                  <option value={70}>{tc("riskAtLeast", { score: 70 })}</option>
                 </select>
               </div>
             </CardHeader>
@@ -358,21 +330,21 @@ export default function CorrelationPage() {
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Risk</TableHead>
-                    <TableHead>IPs</TableHead>
-                    <TableHead>HWIDs</TableHead>
-                    <TableHead>Shared With</TableHead>
-                    <TableHead>Threats</TableHead>
-                    <TableHead>Countries</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{tc("user")}</TableHead>
+                    <TableHead>{tc("riskCol")}</TableHead>
+                    <TableHead>{tc("ipsCol")}</TableHead>
+                    <TableHead>{tc("hwidsCol")}</TableHead>
+                    <TableHead>{tc("sharedWith")}</TableHead>
+                    <TableHead>{tc("threatsCol")}</TableHead>
+                    <TableHead>{tc("countriesCol")}</TableHead>
+                    <TableHead>{tc("statusCol")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {profilesPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center text-muted-foreground">
-                        No profiles found. Data will appear after log processing.
+                        {tc("noProfilesFound")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -408,12 +380,12 @@ export default function CorrelationPage() {
                           <div className="flex gap-2">
                             {profile.shared_ip_users > 0 && (
                               <Badge variant="secondary">
-                                {profile.shared_ip_users} IP
+                                {tc("ipCount", { count: profile.shared_ip_users })}
                               </Badge>
                             )}
                             {profile.shared_hwid_users > 0 && (
                               <Badge variant="destructive">
-                                {profile.shared_hwid_users} HWID
+                                {tc("hwidCount", { count: profile.shared_hwid_users })}
                               </Badge>
                             )}
                           </div>
@@ -450,28 +422,26 @@ export default function CorrelationPage() {
         <TabsContent value="shared-ips" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Shared IP Addresses</CardTitle>
-              <CardDescription>
-                IPs used by multiple user accounts - potential VPN exit nodes or shared networks
-              </CardDescription>
+              <CardTitle>{tc("sharedIpAddresses")}</CardTitle>
+              <CardDescription>{tc("sharedIpAddressesDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-auto max-h-[600px] border rounded-md">
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead>IP Address</TableHead>
-                    <TableHead>Users</TableHead>
-                    <TableHead>Total Requests</TableHead>
-                    <TableHead>Last Seen</TableHead>
-                    <TableHead>User List</TableHead>
+                    <TableHead>{tc("ipAddressCol")}</TableHead>
+                    <TableHead>{tc("usersCol")}</TableHead>
+                    <TableHead>{tc("totalRequestsCol")}</TableHead>
+                    <TableHead>{tc("lastSeenCol")}</TableHead>
+                    <TableHead>{tc("userListCol")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sharedIPsPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        No shared IPs found
+                        {tc("noSharedIps")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -480,7 +450,7 @@ export default function CorrelationPage() {
                         <TableCell className="font-mono">{ip.ip_address}</TableCell>
                         <TableCell>
                           <Badge variant={ip.user_count > 5 ? "destructive" : "secondary"}>
-                            {ip.user_count} users
+                            {tc("usersCount", { count: ip.user_count })}
                           </Badge>
                         </TableCell>
                         <TableCell>{ip.total_requests.toLocaleString()}</TableCell>
@@ -494,7 +464,7 @@ export default function CorrelationPage() {
                             ))}
                             {ip.users?.length > 5 && (
                               <Badge variant="outline" className="text-xs">
-                                +{ip.users.length - 5} more
+                                {tc("moreCountPlain", { count: ip.users.length - 5 })}
                               </Badge>
                             )}
                           </div>
@@ -515,30 +485,28 @@ export default function CorrelationPage() {
             <CardHeader>
               <CardTitle className="flex items-center">
                 <AlertTriangle className="h-5 w-5 mr-2 text-orange-500" />
-                Shared Hardware IDs
+                {tc("sharedHardwareIds")}
               </CardTitle>
-              <CardDescription>
-                Same device used by multiple accounts - potential account sharing or fraud
-              </CardDescription>
+              <CardDescription>{tc("sharedHardwareIdsDesc")}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-auto max-h-[600px] border rounded-md">
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead>HWID</TableHead>
-                    <TableHead>Platform</TableHead>
-                    <TableHead>Users</TableHead>
-                    <TableHead>Total Requests</TableHead>
-                    <TableHead>Last Seen</TableHead>
-                    <TableHead>User List</TableHead>
+                    <TableHead>{tc("hwidCol")}</TableHead>
+                    <TableHead>{tc("platformCol")}</TableHead>
+                    <TableHead>{tc("usersCol")}</TableHead>
+                    <TableHead>{tc("totalRequestsCol")}</TableHead>
+                    <TableHead>{tc("lastSeenCol")}</TableHead>
+                    <TableHead>{tc("userListCol")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sharedHWIDsPagination.paginatedData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground">
-                        No shared HWIDs found - this is good!
+                        {tc("noSharedHwids")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -548,11 +516,11 @@ export default function CorrelationPage() {
                           {hwid.hwid.substring(0, 16)}...
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{hwid.platform || "Unknown"}</Badge>
+                          <Badge variant="outline">{hwid.platform || tc("unknownPlatform")}</Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="destructive">
-                            {hwid.user_count} users
+                            {tc("usersCount", { count: hwid.user_count })}
                           </Badge>
                         </TableCell>
                         <TableCell>{hwid.total_requests.toLocaleString()}</TableCell>

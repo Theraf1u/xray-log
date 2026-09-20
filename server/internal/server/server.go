@@ -22,6 +22,18 @@ import (
 )
 
 // Server handles WebSocket connections from agents and HTTP API
+// telegramReconfigurer is the slice of *telegram.Bot the admin handlers use.
+// A local interface (not the concrete type) keeps this package from needing
+// to import internal/telegram just for a settings screen.
+type telegramReconfigurer interface {
+	SetCredentials(token, chatID, topicID string)
+	SetEnabled(enabled bool)
+	IsConfigured() bool
+	IsEnabled() bool
+	Credentials() (token, chatID, topicID string)
+	SendTestMessage() error
+}
+
 type Server struct {
 	addr           string
 	allowedOrigins []string
@@ -32,6 +44,7 @@ type Server struct {
 	blacklist      *blacklist.Blacklist
 	threatIntel    *threatintel.Service
 	remnawave      *remnawave.SyncService
+	telegramBot    telegramReconfigurer
 	correlation    *correlation.Service
 	ipInfo         *ipinfo.Service
 	aleria         *aleria.Service
@@ -107,6 +120,13 @@ func (s *Server) SetThreatIntel(ti *threatintel.Service) {
 // SetRemnawave sets the Remnawave sync service
 func (s *Server) SetRemnawave(rw *remnawave.SyncService) {
 	s.remnawave = rw
+}
+
+// SetTelegramBot wires the bot so the admin settings endpoints can
+// reconfigure it live. Optional — a nil bot just means admin PUTs to the
+// Telegram section only persist to the DB and note a restart is needed.
+func (s *Server) SetTelegramBot(bot telegramReconfigurer) {
+	s.telegramBot = bot
 }
 
 // SetCorrelation sets the correlation service
@@ -241,10 +261,12 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// API endpoints (require API token)
 	mux.HandleFunc("/api/stats", s.requireAPIToken(s.cached(5*time.Second, s.handleStats)))
+	mux.HandleFunc("/api/storage", s.requireAPIToken(s.cached(60*time.Second, s.handleStorageMetrics)))
 	mux.HandleFunc("/api/nodes", s.requireAPIToken(s.cached(10*time.Second, s.handleNodes)))
 	mux.HandleFunc("/api/nodes/delete", s.requireAPIToken(s.handleDeleteNode))
 	mux.HandleFunc("/api/users", s.requireAPIToken(s.cached(30*time.Second, s.handleUsers)))
 	mux.HandleFunc("/api/users/all", s.requireAPIToken(s.cached(30*time.Second, s.handleAllUsers)))
+	mux.HandleFunc("/api/export/user", s.requireAPIToken(s.handleRequestExport))
 	mux.HandleFunc("/api/hourly", s.requireAPIToken(s.cached(60*time.Second, s.handleHourlyStats)))
 	mux.HandleFunc("/api/online-history", s.requireAPIToken(s.cached(30*time.Second, s.handleOnlineHistory)))
 	mux.HandleFunc("/api/anomalies", s.requireAPIToken(s.cached(30*time.Second, s.handleAnomalies)))
@@ -269,6 +291,9 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/ipinfo", s.requireAPIToken(s.cached(300*time.Second, s.handleIPInfo)))
 
 	// Remnawave API endpoints
+	mux.HandleFunc("/api/services/health", s.requireAPIToken(s.handleServicesHealth))
+	mux.HandleFunc("/api/admin/settings", s.requireAPIToken(s.handleAdminSettings))
+	mux.HandleFunc("/api/nodes/install-command", s.requireAPIToken(s.handleNodeInstallCommand))
 	mux.HandleFunc("/api/remnawave/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveStats)))
 	mux.HandleFunc("/api/remnawave/users", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUsers)))
 	mux.HandleFunc("/api/remnawave/user/", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUser)))
@@ -305,11 +330,15 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.startCacheWarmupJob(ctx)
 	go s.startRateLimitJanitor(ctx)
 
-	// Middleware chain (outermost first): rate limit → security headers → mux.
+	// Middleware chain (outermost first): rate limit → security headers →
+	// gzip → mux. Compression sits inside the header layer so hardening
+	// headers are set on the real writer, and it skips WebSocket and SSE
+	// paths itself.
 	// Rate limiting rejects abuse cheaply before any work; the security layer
 	// sets hardening headers and caps request bodies without wrapping the
 	// ResponseWriter, so streaming (SSE) and WebSocket handlers keep working.
 	var handler http.Handler = mux
+	handler = s.compress(handler)
 	handler = s.securityHeaders(handler)
 	handler = s.rateLimit(handler)
 
@@ -335,13 +364,11 @@ func (s *Server) Start(ctx context.Context) error {
 	return server.ListenAndServe()
 }
 
-// startCleanupJob runs periodic cleanup of inactive nodes and old data
+// startCleanupJob removes stale disconnected-node state. Historical traffic
+// and security records are intentionally retained without a time limit.
 func (s *Server) startCleanupJob(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
-
-	// Run cleanup on startup
-	s.storage.CleanupOldData(context.Background(), 30) // 30 days retention
 
 	for {
 		select {
@@ -349,7 +376,6 @@ func (s *Server) startCleanupJob(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.storage.CleanupInactiveNodes(context.Background(), 24*time.Hour)
-			s.storage.CleanupOldData(context.Background(), 30) // 30 days retention
 		}
 	}
 }

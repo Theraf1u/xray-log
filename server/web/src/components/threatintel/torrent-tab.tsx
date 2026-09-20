@@ -10,6 +10,8 @@ import { ThreatMatch, FeedStatus, CategoryUserStats } from "@/lib/types";
 import Link from "next/link";
 import { MatchesTable } from "./matches-table";
 import { useTranslations } from "next-intl";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
+import { StatRail } from "@/components/ui/stat-rail";
 
 interface TorrentTabProps {
   topUsers: CategoryUserStats[];
@@ -34,7 +36,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
   const [totalUsers, setTotalUsers] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [usersLoading, setUsersLoading] = useState(true);
-  const pageSize = 12;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   // Fetch paginated users
   const fetchUsers = useCallback(async (page: number) => {
@@ -58,7 +60,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
     } finally {
       setUsersLoading(false);
     }
-  }, []);
+  }, [pageSize]);
 
   // Fetch torrent matches on mount
   const fetchMatches = useCallback(async () => {
@@ -94,47 +96,34 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
   
   return (
     <div className="space-y-6">
-      {/* Torrent Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Download className="h-4 w-4 text-cyan-600" />
-              Torrent Detections
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-cyan-600">
-              {totalDetections.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">On current page</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Unique Users</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {uniqueUsers}
-            </div>
-            <p className="text-xs text-muted-foreground">Using torrents (all time)</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Indicators Loaded</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {totalIndicators.toLocaleString()}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              From {feeds.length} source{feeds.length !== 1 ? 's' : ''}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Three bordered cards became one rail. */}
+      <StatRail
+        columns={3}
+        items={[
+          {
+            key: "detections",
+            label: t("torrentDetections"),
+            value: totalDetections,
+            hint: t("onCurrentPage"),
+            tone: "bad",
+            motif: "shield",
+          },
+          {
+            key: "uniqueUsers",
+            label: t("uniqueUsersLabel"),
+            value: uniqueUsers,
+            hint: t("usingTorrentsAllTime"),
+            motif: "users",
+          },
+          {
+            key: "indicators",
+            label: t("indicatorsLoaded"),
+            value: totalIndicators,
+            hint: t("fromSourcesCount", { count: feeds.length }),
+            motif: "database",
+          },
+        ]}
+      />
 
       {/* Top Torrent Users with Pagination */}
       <Card>
@@ -143,14 +132,15 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Download className="h-5 w-5 text-cyan-600" />
-                Torrent Users
+                {t("torrentUsers")}
               </CardTitle>
               <CardDescription>
-                {totalUsers > 0 ? `${totalUsers} users with torrent activity` : 'Users with torrent activity'}
+                {totalUsers > 0 ? t("torrentUsersCount", { count: totalUsers }) : t("torrentUsersActivity")}
               </CardDescription>
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setCurrentPage(1); }} disabled={usersLoading} />
+              {totalPages > 1 && <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -170,8 +160,8 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-              </div>
-            )}
+              </div>}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -199,7 +189,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
                       {user.username || user.user_email}
                     </Link>
                     <div className="flex items-center gap-2 mt-1">
-                      <Badge variant="secondary">{user.match_count} hits</Badge>
+                      <Badge variant="secondary">{t("hitsCount", { count: user.match_count })}</Badge>
                     </div>
                     {user.domains && user.domains.length > 0 && (
                       <div className="mt-2 text-xs text-muted-foreground">
@@ -208,7 +198,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
                             {d}{i < Math.min(user.domains.length, 3) - 1 ? ", " : ""}
                           </span>
                         ))}
-                        {user.domains.length > 3 && <span> +{user.domains.length - 3} more</span>}
+                        {user.domains.length > 3 && <span> {t("moreCount", { count: user.domains.length - 3 })}</span>}
                       </div>
                     )}
                   </div>
@@ -217,7 +207,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              No torrent users detected yet
+              {t("noTorrentUsersYet")}
             </div>
           )}
         </CardContent>
@@ -226,7 +216,7 @@ export function TorrentTab({ topUsers, feeds }: TorrentTabProps) {
       {/* Torrent Matches Table */}
       <MatchesTable 
         matches={matches} 
-        title="Recent Torrent Activity"
+        title={t("recentTorrentActivity")}
         description={t("noRecentActivity")}
       />
     </div>

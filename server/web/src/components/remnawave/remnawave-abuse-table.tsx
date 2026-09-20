@@ -230,7 +230,7 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                               ) : (
                                 <Trash2 className="h-4 w-4" />
                               )}
-                              <span className="ml-1.5 hidden sm:inline">Clear</span>
+                              <span className="ml-1.5 hidden sm:inline">{tCommon("clear")}</span>
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent onClick={(e) => e.stopPropagation()}>
@@ -289,15 +289,15 @@ export function RemnawaveAbuseTable({ users, onHwidCleared }: RemnawaveAbuseTabl
                                   className="text-xs bg-background p-3 rounded border grid grid-cols-2 md:grid-cols-4 gap-2"
                                 >
                                   <div>
-                                    <span className="text-muted-foreground">HWID:</span>
+                                    <span className="text-muted-foreground">{t("hwidLabel")}</span>
                                     <span className="ml-1 font-mono">{device.hwid.slice(0, 16)}...</span>
                                   </div>
                                   <div>
-                                    <span className="text-muted-foreground">Platform:</span>
+                                    <span className="text-muted-foreground">{t("platformLabel")}</span>
                                     <span className="ml-1">{getPlatformIcon(device.platform || "")} {device.platform || "Unknown"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-muted-foreground">Model:</span>
+                                    <span className="text-muted-foreground">{t("modelLabel")}</span>
                                     <span className="ml-1">{device.deviceModel || "—"}</span>
                                   </div>
                                   <div>

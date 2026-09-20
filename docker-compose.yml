@@ -19,6 +19,7 @@ services:
     volumes:
       - analyzer-data:/app/data
       - ./server/blacklist.txt:/app/blacklist.txt:ro
+      - /mnt/storage/xray-analyzer-monitor:/storage-monitor:ro
     environment:
       - LISTEN_ADDR=:8237
       - DB_PATH=/app/data/analyzer.db
@@ -41,6 +42,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
       - POSTGRES_URL=postgres://xray_analyzer:${POSTGRES_PASSWORD:-changeme_in_env}@analyzer-postgres:5432/xray_analyzer?sslmode=disable
+      - STORAGE_MONITOR_PATH=/storage-monitor
     depends_on:
       analyzer-redis:
         condition: service_started
@@ -98,7 +100,7 @@ services:
       POSTGRES_USER: xray_analyzer
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
     volumes:
-      - analyzer-postgres-data:/var/lib/postgresql/data
+      - /mnt/storage/xray-analyzer/postgres:/var/lib/postgresql/data
     command: >
       postgres
       -c shared_buffers=2GB

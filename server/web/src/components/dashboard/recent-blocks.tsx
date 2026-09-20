@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,8 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { BlacklistMatchInfo } from "@/lib/types";
-import { format } from "date-fns";
-import { isValidDate } from "@/lib/utils/date";
+
+import { isValidDate, formatRu } from "@/lib/utils/date";
 
 interface RecentBlocksProps {
   matches: BlacklistMatchInfo[];
@@ -28,6 +29,7 @@ function getMatchKey(match: BlacklistMatchInfo, index: number): string {
 }
 
 export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps) {
+  const rb = useTranslations("recentBlocks");
   // Sort matches by timestamp (newest first) and limit
   const sortedMatches = useMemo(() => {
     if (!matches || matches.length === 0) return [];
@@ -51,7 +53,7 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
   if (!matches || matches.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-8">
-        No recent blocks
+        {rb("empty")}
       </div>
     );
   }
@@ -61,10 +63,10 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="whitespace-nowrap">User</TableHead>
-            <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
-            <TableHead className="whitespace-nowrap hidden md:table-cell">Destination</TableHead>
-            <TableHead className="whitespace-nowrap">Time</TableHead>
+            <TableHead className="whitespace-nowrap">{rb("user")}</TableHead>
+            <TableHead className="whitespace-nowrap hidden sm:table-cell">{rb("node")}</TableHead>
+            <TableHead className="whitespace-nowrap hidden md:table-cell">{rb("destination")}</TableHead>
+            <TableHead className="whitespace-nowrap">{rb("time")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -79,7 +81,7 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
                     {match.display_name || match.user_email}
                   </Link>
                 ) : (
-                  <span className="text-muted-foreground">Unknown</span>
+                  <span className="text-muted-foreground">{rb("unknown")}</span>
                 )}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
@@ -90,7 +92,7 @@ export function RecentBlocks({ matches, loading, limit = 12 }: RecentBlocksProps
               </TableCell>
               <TableCell className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
                 {isValidDate(match.timestamp)
-                  ? format(new Date(match.timestamp), "HH:mm:ss")
+                  ? formatRu(new Date(match.timestamp), "HH:mm:ss")
                   : "—"
                 }
               </TableCell>

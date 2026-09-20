@@ -115,6 +115,11 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 	if batch.NodeID == "" {
 		return 0, 0, fmt.Errorf("empty node_id in batch")
 	}
+	// Preserve a complete per-request chronology in its own table. A failure
+	// here must not interrupt the established aggregation/alerting pipeline.
+	if err := a.storage.RecordRequestEvents(ctx, batch.NodeID, batch.Entries); err != nil {
+		log.Printf("analyzer: failed to record request chronology: %v", err)
+	}
 	// Track per-user stats in this batch
 	userRequests := make(map[string]int)
 	userBlacklist := make(map[string]int)
@@ -206,13 +211,14 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 			if a.ipInfo != nil {
 				u, ip, nodeID := user, lastIP, batch.NodeID
 				go func() {
-					geoCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					geoCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 					defer cancel()
 					ipData, err := a.ipInfo.Lookup(geoCtx, ip)
 					if err != nil || ipData == nil {
 						return
 					}
 					_ = a.storage.RecordUserIP(geoCtx, u, ip, nodeID, ipData.CountryCode, ipData.Country, ipData.City)
+					_ = a.storage.SaveUserLocation(geoCtx, u, ipData.CountryCode, ipData.Country, ipData.City, ipData.Lat, ipData.Lon)
 				}()
 			}
 		}
@@ -466,3 +472,4 @@ func (a *Analyzer) generateThreatAlert(ctx context.Context, nodeID string, entry
 	log.Printf("analyzer: generated threat alert for user %s (type: %s, confidence: %d%%)",
 		entry.UserEmail, match.ThreatType, match.Confidence)
 }
+

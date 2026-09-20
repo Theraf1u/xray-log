@@ -93,6 +93,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	s.clientsMu.RLock()
 	globalStats.NodesConnected = len(s.clients)
 	s.clientsMu.RUnlock()
+	s.reconcileNodeTotals(globalStats)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(globalStats)
@@ -117,6 +118,23 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(nodes)
+}
+
+// reconcileNodeTotals keeps "connected / total" from reading 19/18.
+//
+// The two numbers come from different populations: NodesConnected counts live
+// agent WebSockets, while TotalNodes counts rows in node_stats, which a node
+// only gets once its first batch has been persisted. A node that just
+// connected is therefore in the first set and not yet in the second, and the
+// dashboard showed more nodes online than exist. Total is the union, so it can
+// never be smaller than the number of agents actually attached.
+func (s *Server) reconcileNodeTotals(stats *models.GlobalStats) {
+	if stats == nil {
+		return
+	}
+	if stats.NodesConnected > stats.TotalNodes {
+		stats.TotalNodes = stats.NodesConnected
+	}
 }
 
 // handleUsers returns top users by blacklist hits
@@ -231,7 +249,7 @@ func (s *Server) handleUserThreatMatches(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
 			pageSize = parsed
 		}
 	}
@@ -737,7 +755,7 @@ func (s *Server) handleUserDestinations(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
 			pageSize = parsed
 		}
 	}
@@ -801,7 +819,7 @@ func (s *Server) handleUserAlerts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
 			pageSize = parsed
 		}
 	}
@@ -848,7 +866,7 @@ func (s *Server) handleUserBlacklistMatches(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
 			pageSize = parsed
 		}
 	}
@@ -989,7 +1007,7 @@ func (s *Server) handleThreatIntelTopUsers(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	if ps := r.URL.Query().Get("page_size"); ps != "" {
-		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.Atoi(ps); err == nil && parsed > 0 && parsed <= 1000 {
 			pageSize = parsed
 		}
 	}
@@ -1720,11 +1738,12 @@ func (s *Server) handleDebugUsers(w http.ResponseWriter, r *http.Request) {
 // handleBridgedFlows returns correlated bridge → exit flows.
 //
 // Query params (all optional):
-//   user   = exact user_email
-//   ip     = exact real_client_ip
-//   dest   = substring match against destination
-//   since  = duration like "1h", "30m" — flows newer than now-since
-//   limit  = max rows (default 200, max 1000)
+//
+//	user   = exact user_email
+//	ip     = exact real_client_ip
+//	dest   = substring match against destination
+//	since  = duration like "1h", "30m" — flows newer than now-since
+//	limit  = max rows (default 200, max 1000)
 func (s *Server) handleBridgedFlows(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -1813,10 +1832,11 @@ func (s *Server) handleBridgeUsers(w http.ResponseWriter, r *http.Request) {
 // dedicated Attacks tab in Threat Intel.
 //
 // Query params:
-//   types  = csv (default "port_scan,abuse_port_flood")
-//   since  = duration (default "24h")
-//   limit  = 1..500 (default 100)
-//   resolved = "true" to include resolved entries
+//
+//	types  = csv (default "port_scan,abuse_port_flood")
+//	since  = duration (default "24h")
+//	limit  = 1..500 (default 100)
+//	resolved = "true" to include resolved entries
 func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -1865,9 +1885,9 @@ func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"count":  len(out),
-		"types":  types,
-		"since":  since.String(),
+		"count":   len(out),
+		"types":   types,
+		"since":   since.String(),
 		"attacks": out,
 	})
 }

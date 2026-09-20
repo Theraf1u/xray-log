@@ -27,10 +27,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { UserStats } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { Search, ExternalLink, Download, ArrowUpDown, AlertTriangle, Shield, ShieldAlert } from "lucide-react";
 import { isValidDate } from "@/lib/utils/date";
 import { IPInfoBadge } from "@/components/ui/ip-info-badge";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
+import { useTranslations } from "next-intl";
 
 // Calculate risk score based on user activity (0-100)
 function calculateRiskScore(user: UserStats): number {
@@ -59,8 +61,9 @@ function calculateRiskScore(user: UserStats): number {
   return Math.min(Math.round(score), 100);
 }
 
-// Risk level badge component
-function RiskBadge({ score }: { score: number }) {
+// Risk level badge. Module-level (no hook access), so the caller passes
+// already-translated copy rather than this calling useTranslations itself.
+function RiskBadge({ score, labels }: { score: number; labels: Record<string, string> }) {
   if (score >= 70) {
     return (
       <TooltipProvider>
@@ -71,7 +74,7 @@ function RiskBadge({ score }: { score: number }) {
               {score}
             </Badge>
           </TooltipTrigger>
-          <TooltipContent>High Risk - Immediate attention required</TooltipContent>
+          <TooltipContent>{labels.high}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );
@@ -86,7 +89,7 @@ function RiskBadge({ score }: { score: number }) {
               {score}
             </Badge>
           </TooltipTrigger>
-          <TooltipContent>Medium Risk - Review recommended</TooltipContent>
+          <TooltipContent>{labels.medium}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );
@@ -101,7 +104,7 @@ function RiskBadge({ score }: { score: number }) {
               {score}
             </Badge>
           </TooltipTrigger>
-          <TooltipContent>Low Risk</TooltipContent>
+          <TooltipContent>{labels.low}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     );
@@ -120,18 +123,25 @@ interface UsersTableProps {
   pageSize?: number;
 }
 
-export function UsersTable({ 
-  users, 
+export function UsersTable({
+  users,
   showBlacklistOnly = false,
   showSearch = false,
-  pageSize = 50,
+  pageSize: initialPageSize = 25,
 }: UsersTableProps) {
+  const t = useTranslations("usersTable");
+  const riskLabels = {
+    high: t("riskHighTooltip"),
+    medium: t("riskMediumTooltip"),
+    low: t("riskLowTooltip"),
+  };
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [nodeFilter, setNodeFilter] = useState<string>("all");
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
   const [sortField, setSortField] = useState<SortField>("requests");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [pageSize, setPageSize] = usePageSize(initialPageSize);
 
   // Get unique individual nodes for filter (node_id can be comma-separated list)
   const uniqueNodes = useMemo(() => {
@@ -226,7 +236,7 @@ export function UsersTable({
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headers = ["Username", "Node", "Requests", "Blacklist Hits", "Risk Score", "Destinations", "Last IP", "Last Seen", "Last Blocked Domain"];
+    const headers = [t("csvUsername"), t("csvNode"), t("csvRequests"), t("csvBlacklistHits"), t("csvRiskScore"), t("csvDestinations"), t("csvLastIp"), t("csvLastSeen"), t("csvLastBlockedDomain")];
     const rows = filteredUsers.map(u => [
       u.username,
       u.node_id,
@@ -266,7 +276,7 @@ export function UsersTable({
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by user, node or IP..."
+              placeholder={t("searchPlaceholder")}
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -277,10 +287,10 @@ export function UsersTable({
           </div>
           <Select value={nodeFilter} onValueChange={(v) => { setNodeFilter(v); setPage(0); }}>
             <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="All nodes" />
+              <SelectValue placeholder={t("allNodes")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All nodes</SelectItem>
+              <SelectItem value="all">{t("allNodes")}</SelectItem>
               {uniqueNodes.map(node => (
                 <SelectItem key={node} value={node}>{node}</SelectItem>
               ))}
@@ -288,37 +298,37 @@ export function UsersTable({
           </Select>
           <Select value={riskFilter} onValueChange={(v) => { setRiskFilter(v as RiskFilter); setPage(0); }}>
             <SelectTrigger className="w-full sm:w-[150px]">
-              <SelectValue placeholder="Risk Level" />
+              <SelectValue placeholder={t("riskLevel")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All risks</SelectItem>
+              <SelectItem value="all">{t("allRisks")}</SelectItem>
               <SelectItem value="high">
                 <span className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-red-500" />
-                  High (≥70)
+                  {t("riskHigh")} (≥70)
                 </span>
               </SelectItem>
               <SelectItem value="medium">
                 <span className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-yellow-500" />
-                  Medium (40-69)
+                  {t("riskMedium")} (40–69)
                 </span>
               </SelectItem>
               <SelectItem value="low">
                 <span className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-gray-400" />
-                  Low (1-39)
+                  {t("riskLow")} (1–39)
                 </span>
               </SelectItem>
               <SelectItem value="none">
                 <span className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-green-500" />
-                  None (0)
+                  {t("riskNone")} (0)
                 </span>
               </SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={handleExportCSV} title="Export CSV">
+          <Button variant="outline" size="icon" onClick={handleExportCSV} title={t("exportCsv")}>
             <Download className="h-4 w-4" />
           </Button>
         </div>
@@ -329,51 +339,51 @@ export function UsersTable({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="whitespace-nowrap">User</TableHead>
-                <TableHead className="whitespace-nowrap hidden sm:table-cell">Node</TableHead>
-                <TableHead className="whitespace-nowrap hidden lg:table-cell">IP</TableHead>
-                <TableHead 
+                <TableHead className="whitespace-nowrap">{t("colUser")}</TableHead>
+                <TableHead className="whitespace-nowrap hidden sm:table-cell">{t("colNode")}</TableHead>
+                <TableHead className="whitespace-nowrap hidden lg:table-cell">{t("colIp")}</TableHead>
+                <TableHead
                   className="text-right whitespace-nowrap hidden md:table-cell cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("requests")}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Requests
+                    {t("colRequests")}
                     <ArrowUpDown className={`h-3 w-3 ${sortField === "requests" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="text-right whitespace-nowrap cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("blacklist")}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Blacklist
+                    {t("colBlacklist")}
                     <ArrowUpDown className={`h-3 w-3 ${sortField === "blacklist" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="text-center whitespace-nowrap hidden md:table-cell cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("risk")}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Risk
+                    {t("colRisk")}
                     <ArrowUpDown className={`h-3 w-3 ${sortField === "risk" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="text-right whitespace-nowrap hidden lg:table-cell cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("destinations")}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Destinations
+                    {t("colDestinations")}
                     <ArrowUpDown className={`h-3 w-3 ${sortField === "destinations" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
-                <TableHead 
+                <TableHead
                   className="whitespace-nowrap hidden md:table-cell cursor-pointer hover:text-foreground"
                   onClick={() => toggleSort("last_seen")}
                 >
                   <span className="inline-flex items-center gap-1">
-                    Last Seen
+                    {t("colLastSeen")}
                     <ArrowUpDown className={`h-3 w-3 ${sortField === "last_seen" ? "text-primary" : ""}`} />
                   </span>
                 </TableHead>
@@ -412,14 +422,14 @@ export function UsersTable({
                     )}
                   </TableCell>
                   <TableCell className="text-center hidden md:table-cell">
-                    <RiskBadge score={user.riskScore} />
+                    <RiskBadge score={user.riskScore} labels={riskLabels} />
                   </TableCell>
                   <TableCell className="text-right hidden lg:table-cell">
                     {user.unique_destinations}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm hidden md:table-cell whitespace-nowrap">
                     {isValidDate(user.last_seen) 
-                      ? formatDistanceToNow(new Date(user.last_seen), { addSuffix: true })
+                      ? formatDistanceToNowRu(new Date(user.last_seen))
                       : "—"
                     }
                   </TableCell>
@@ -431,7 +441,7 @@ export function UsersTable({
                     colSpan={8} 
                     className="text-center text-muted-foreground"
                   >
-                    {showBlacklistOnly ? "No blacklist hits" : "No users found"}
+                    {showBlacklistOnly ? t("noBlacklistHits") : t("noUsersFound")}
                   </TableCell>
                 </TableRow>
               )}
@@ -440,19 +450,22 @@ export function UsersTable({
         </div>
       </div>
 
-      {totalPages > 1 && (
+      {filteredUsers.length > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            {page * pageSize + 1}-{Math.min((page + 1) * pageSize, filteredUsers.length)} of {filteredUsers.length}
-          </p>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {t("pageRange", { from: page * pageSize + 1, to: Math.min((page + 1) * pageSize, filteredUsers.length), total: filteredUsers.length })}
+            </p>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(0); }} />
+          </div>
+          {totalPages > 1 && <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
             >
-              Previous
+              {t("previous")}
             </Button>
             <Button
               variant="outline"
@@ -460,9 +473,9 @@ export function UsersTable({
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
             >
-              Next
+              {t("next")}
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </div>

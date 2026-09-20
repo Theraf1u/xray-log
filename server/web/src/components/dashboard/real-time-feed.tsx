@@ -15,7 +15,8 @@ import {
   CheckCircle,
   Filter
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -58,24 +59,28 @@ const eventIcons: Record<EventType, React.ReactNode> = {
 };
 
 const eventColors: Record<EventType, string> = {
-  blacklist_hit: "bg-red-500/10 text-red-500 border-red-500/20",
-  threat_match: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-  user_online: "bg-green-500/10 text-green-500 border-green-500/20",
-  node_status: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-  anomaly: "bg-yellow-500/10 text-yellow-500 border-yellow-500/20",
-  sync: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  blacklist_hit: "text-red-500",
+  threat_match: "text-orange-500",
+  user_online: "text-green-500",
+  node_status: "text-muted-foreground",
+  anomaly: "text-yellow-500",
+  sync: "text-muted-foreground",
 };
 
-const eventLabels: Record<EventType, string> = {
-  blacklist_hit: "Blacklist",
-  threat_match: "Threat",
-  user_online: "User",
-  node_status: "Node",
-  anomaly: "Anomaly",
-  sync: "Sync",
+// Keys, not labels: the map lives outside the component (no hook access), so
+// the one call site (the filter dropdown) looks these up via tf(`type.${...}`).
+const eventLabelKeys: Record<EventType, string> = {
+  blacklist_hit: "blacklist",
+  threat_match: "threat",
+  user_online: "user",
+  node_status: "node",
+  anomaly: "anomaly",
+  sync: "sync",
 };
 
-export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" }: RealTimeFeedProps) {
+export function RealTimeFeed({ events, maxEvents = 50, title }: RealTimeFeedProps) {
+  const tf = useTranslations("realTimeFeed");
+  const heading = title ?? tf("title");
   const [filter, setFilter] = useState<Set<EventType>>(new Set(Object.keys(eventIcons) as EventType[]));
   const [newEventIds, setNewEventIds] = useState<Set<string>>(new Set());
   const prevEventsRef = useRef<Set<string>>(new Set());
@@ -127,14 +132,14 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
   };
 
   return (
-    <Card className="flex flex-col h-full">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
       <CardHeader className="pb-3 flex-none">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Activity className="h-4 w-4 text-green-500" />
-            {title}
+            {heading}
             <Badge variant="secondary" className="text-xs animate-pulse">
-              Live
+              {tf("live")}
             </Badge>
           </CardTitle>
           <DropdownMenu>
@@ -152,7 +157,7 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
                 >
                   <span className="flex items-center gap-2">
                     {eventIcons[type]}
-                    {eventLabels[type]}
+                    {tf(`type.${eventLabelKeys[type]}` as Parameters<typeof tf>[0])}
                   </span>
                 </DropdownMenuCheckboxItem>
               ))}
@@ -163,23 +168,23 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
       <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
         <div
           ref={scrollRef}
-          className="h-full overflow-y-auto scrollbar-thin px-4 pb-4"
+          className="h-full overflow-y-auto scrollbar-thin px-5 pb-4"
         >
           {filteredEvents.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No events to display</p>
+              <p className="text-sm">{tf("empty")}</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="-mx-5">
               {filteredEvents.map((event) => {
                 const isNew = newEventIds.has(event.id);
                 return (
                   <div
                     key={event.id}
-                    className={`flex items-start gap-2 p-2 rounded-lg border transition-all duration-300 ${
-                      eventColors[event.type]
-                    } ${isNew ? "animate-fade-in-row ring-1 ring-primary/50" : ""}`}
+                    className={`glass-row flex items-start gap-2.5 px-5 py-2 ${
+                      isNew ? "animate-fade-in-row" : ""
+                    }`}
                   >
                     <div className="mt-0.5">{eventIcons[event.type]}</div>
                     <div className="flex-1 min-w-0">
@@ -191,7 +196,7 @@ export function RealTimeFeed({ events, maxEvents = 50, title = "Real-time Feed" 
                       )}
                     </div>
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
+                      {formatDistanceToNowRu(new Date(event.timestamp))}
                     </span>
                   </div>
                 );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,7 @@ import {
   Shield
 } from "lucide-react";
 import { AnomalySummary, Anomaly, AnomalyType, AnomalySeverity } from "@/lib/types";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { StatCard, StatCardGrid } from "./stat-card";
 
 interface AnomalyPanelProps {
@@ -33,52 +34,52 @@ interface AnomalyPanelProps {
 const anomalyTypeConfig: Record<AnomalyType, { icon: React.ReactNode; label: string; color: string }> = {
   activity_spike: { 
     icon: <TrendingUp className="h-4 w-4" />, 
-    label: "Activity Spike", 
+    label: "activitySpike", 
     color: "text-amber-600 dark:text-amber-400" 
   },
   night_activity: { 
     icon: <Moon className="h-4 w-4" />, 
-    label: "Night Activity", 
+    label: "nightActivity", 
     color: "text-violet-600 dark:text-violet-400" 
   },
   new_user_high_vol: { 
     icon: <UserPlus className="h-4 w-4" />, 
-    label: "New User High Volume", 
+    label: "newUserHighVolume", 
     color: "text-blue-600 dark:text-blue-400" 
   },
   geo_anomaly: { 
     icon: <Globe className="h-4 w-4" />, 
-    label: "Geo Anomaly", 
+    label: "geoAnomaly", 
     color: "text-emerald-600 dark:text-emerald-400" 
   },
   threat_burst: { 
     icon: <Zap className="h-4 w-4" />, 
-    label: "Threat Burst", 
+    label: "threatBurst", 
     color: "text-red-600 dark:text-red-400" 
   },
   multiple_countries: { 
     icon: <MapPin className="h-4 w-4" />, 
-    label: "Multiple Countries", 
+    label: "multipleCountries", 
     color: "text-pink-600 dark:text-pink-400" 
   },
   blacklist_spike: { 
     icon: <AlertTriangle className="h-4 w-4" />, 
-    label: "Blacklist Spike", 
+    label: "blacklistSpike", 
     color: "text-red-600 dark:text-red-400" 
   },
   traffic_spike: { 
     icon: <TrendingUp className="h-4 w-4" />, 
-    label: "Traffic Spike", 
+    label: "trafficSpike", 
     color: "text-amber-600 dark:text-amber-400" 
   },
   user_spike: { 
     icon: <UserPlus className="h-4 w-4" />, 
-    label: "User Spike", 
+    label: "userSpike", 
     color: "text-blue-600 dark:text-blue-400" 
   },
   user_blacklist_spike: { 
     icon: <AlertTriangle className="h-4 w-4" />, 
-    label: "User Blacklist Spike", 
+    label: "userBlacklistSpike", 
     color: "text-red-600 dark:text-red-400" 
   },
 };
@@ -92,6 +93,7 @@ const severityConfig: Record<AnomalySeverity, { color: string; bgColor: string }
 };
 
 export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: AnomalyPanelProps) {
+  const ap = useTranslations("anomalyPanel");
   const [resolving, setResolving] = useState<string | null>(null);
 
   const handleResolve = async (id: string) => {
@@ -129,31 +131,31 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
       <StatCardGrid columns={4}>
         <StatCard
           icon={<AlertTriangle className="h-4 w-4" />}
-          label="Active Anomalies"
+          label={ap("active")}
           value={data?.total_anomalies || 0}
-          subValue="Requiring attention"
+          subValue={ap("requiringAttention")}
           variant={hasAnomalies ? "warning" : "muted"}
           highlight={hasAnomalies ?? false}
         />
         <StatCard
           icon={<Zap className="h-4 w-4" />}
-          label="Critical"
+          label={ap("critical")}
           value={data?.by_severity?.critical || 0}
-          subValue="High priority"
+          subValue={ap("highPriority")}
           variant="danger"
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4" />}
-          label="High Severity"
+          label={ap("highSeverity")}
           value={data?.by_severity?.high || 0}
-          subValue="Needs review"
+          subValue={ap("needsReview")}
           variant="warning"
         />
         <StatCard
           icon={<Shield className="h-4 w-4" />}
-          label="Affected Users"
+          label={ap("affectedUsers")}
           value={data?.affected_users || 0}
-          subValue="Unique users"
+          subValue={ap("uniqueUsers")}
           variant="info"
         />
       </StatCardGrid>
@@ -165,16 +167,16 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
             <div>
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-                Recent Anomalies
+                {ap("recent")}
               </CardTitle>
               <CardDescription className="text-xs">
-                Detected behavioral anomalies
+                {ap("subtitle")}
               </CardDescription>
             </div>
             {onRefresh && (
               <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1">
                 <RefreshCw className="h-4 w-4" />
-                Run Detection
+                {ap("runDetection")}
               </Button>
             )}
           </div>
@@ -185,8 +187,8 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
               <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-3">
                 <Shield className="h-8 w-8 text-emerald-500" />
               </div>
-              <p className="text-sm font-medium">No anomalies detected</p>
-              <p className="text-xs">System is operating normally</p>
+              <p className="text-sm font-medium">{ap("empty")}</p>
+              <p className="text-xs">{ap("allNormal")}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -219,11 +221,11 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                           </p>
                           {anomaly.user_email && (
                             <p className="text-xs text-muted-foreground">
-                              User: <span className="font-mono bg-muted px-1 rounded">{anomaly.user_email}</span>
+                              {ap("userLabel")} <span className="font-mono bg-muted px-1 rounded">{anomaly.user_email}</span>
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground">
-                            {formatDistanceToNow(new Date(anomaly.detected_at), { addSuffix: true })}
+                            {formatDistanceToNowRu(new Date(anomaly.detected_at))}
                           </p>
                         </div>
                       </div>
@@ -255,7 +257,7 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              Anomaly Types
+              {ap("types")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -270,7 +272,7 @@ export function AnomalyPanel({ data, loading = false, onResolve, onRefresh }: An
                     <div className={`p-1.5 rounded-lg bg-background ${config.color}`}>
                       {config.icon}
                     </div>
-                    <span className="text-sm flex-1">{config.label}</span>
+                    <span className="text-sm flex-1">{ap(config.label)}</span>
                     <Badge variant="secondary" className="font-bold">
                       {count}
                     </Badge>

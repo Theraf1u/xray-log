@@ -4,11 +4,10 @@ import { useState, useCallback } from "react";
 import { authFetch } from "@/contexts/auth-context";
 import { useWsNodes } from "@/contexts/websocket-context";
 import { NodesTable } from "@/components/nodes/nodes-table";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { AddNodeDialog } from "@/components/nodes/add-node-dialog";
+import { Glass } from "@/components/ui/glass";
+import { StatRail } from "@/components/ui/stat-rail";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
-import { AnimatedNumber } from "@/components/ui/animated-number";
-import { Wifi, WifiOff } from "lucide-react";
 import { useTranslations } from "next-intl";
 import {
   AlertDialog,
@@ -23,8 +22,7 @@ import {
 
 export default function NodesPage() {
   const t = useTranslations("nodesPage");
-  const tCommon = useTranslations("common");
-  const { nodes, loading, connected } = useWsNodes();
+  const { nodes, loading } = useWsNodes();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -56,6 +54,7 @@ export default function NodesPage() {
     return (
       <div className="p-4 md:p-8 space-y-6">
         <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-24" />
         <Skeleton className="h-[400px]" />
       </div>
     );
@@ -63,92 +62,64 @@ export default function NodesPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* The Live/Disconnected badge that used to sit here duplicated the
+          WebSocket tile already in the header, so it is gone. */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{t("title")}</h2>
-          <p className="text-sm text-muted-foreground">
-            {t("description")}
-          </p>
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">{t("title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("description")}</p>
         </div>
-        <Badge 
-          variant={connected ? "default" : "destructive"} 
-          className="flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          {connected ? (
-            <>
-              <Wifi className="h-3 w-3" />
-              {tCommon("live")}
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3 w-3" />
-              {tCommon("disconnected")}
-            </>
-          )}
-        </Badge>
+        <AddNodeDialog nodes={nodes} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t("totalNodes")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              <AnimatedNumber value={nodes.length} />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-600">{t("online")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              <AnimatedNumber value={onlineNodes.length} />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t("offline")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">
-              <AnimatedNumber value={offlineNodes.length} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <StatRail
+        columns={3}
+        items={[
+          { key: "total", label: t("totalNodes"), value: nodes.length, motif: "nodes" },
+          {
+            key: "online",
+            label: t("online"),
+            value: onlineNodes.length,
+            tone: "ok",
+            dot: onlineNodes.length > 0 ? "ok" : undefined,
+            motif: "pulse",
+          },
+          {
+            key: "offline",
+            label: t("offline"),
+            value: offlineNodes.length,
+            dot: offlineNodes.length > 0 ? "warn" : undefined,
+            motif: "globe",
+          },
+        ]}
+      />
 
       {onlineNodes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-green-600">{t("onlineNodes")}</CardTitle>
-            <CardDescription>{t("onlineNodesDesc")}</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Glass className="overflow-hidden">
+          <div className="px-5 pt-4">
+            <h3 className="text-sm font-semibold text-green-500">{t("onlineNodes")}</h3>
+            <p className="text-xs text-muted-foreground">{t("onlineNodesDesc")}</p>
+          </div>
+          <div className="p-5 pt-3">
             <NodesTable nodes={onlineNodes} />
-          </CardContent>
-        </Card>
+          </div>
+        </Glass>
       )}
 
       {offlineNodes.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-muted-foreground">{t("offlineNodes")}</CardTitle>
-            <CardDescription>
-              {t("offlineNodesDesc")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <NodesTable 
-              nodes={offlineNodes} 
-              showActions 
+        <Glass className="overflow-hidden">
+          <div className="px-5 pt-4">
+            <h3 className="text-sm font-semibold text-muted-foreground">{t("offlineNodes")}</h3>
+            <p className="text-xs text-muted-foreground">{t("offlineNodesDesc")}</p>
+          </div>
+          <div className="p-5 pt-3">
+            <NodesTable
+              nodes={offlineNodes}
+              showActions
               onDelete={setDeleteTarget}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </Glass>
       )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

@@ -20,11 +20,14 @@ type Client struct {
 
 // NewClient creates a new Remnawave API client
 func NewClient(baseURL, apiToken string) *Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyFromEnvironment
 	return &Client{
 		baseURL:  baseURL,
 		apiToken: apiToken,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 	}
 }
@@ -42,6 +45,15 @@ func (c *Client) IsConfigured() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.baseURL != "" && c.apiToken != ""
+}
+
+// Credentials returns the live baseURL and apiToken. Used only by the admin
+// settings endpoint, so it can show what is actually configured (masked)
+// even before anything has ever been saved to the database.
+func (c *Client) Credentials() (baseURL, apiToken string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.baseURL, c.apiToken
 }
 
 // doRequest performs an authenticated HTTP request to the Remnawave API

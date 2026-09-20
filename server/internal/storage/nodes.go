@@ -253,30 +253,20 @@ func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
 	return tx.Commit()
 }
 
-// CleanupInactiveNodes removes nodes that haven't been seen for a while
+// CleanupInactiveNodes removes only the transient dashboard status for nodes
+// that haven't been seen for a while. Historical traffic, alerts, matches and
+// aggregates must remain available even when a node is retired or offline.
 func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
-
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT node_id FROM node_stats WHERE last_seen < $1
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM node_stats WHERE last_seen < $1
 	`, cutoff)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
-
-	var nodeIDs []string
-	for rows.Next() {
-		var nodeID string
-		if err := rows.Scan(&nodeID); err != nil {
-			return 0, err
-		}
-		nodeIDs = append(nodeIDs, nodeID)
+	removed, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
 	}
-
-	for _, nodeID := range nodeIDs {
-		s.DeleteNode(ctx, nodeID)
-	}
-
-	return len(nodeIDs), nil
+	return int(removed), nil
 }

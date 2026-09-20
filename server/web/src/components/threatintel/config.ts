@@ -3,13 +3,13 @@ import { ThreatType, ThreatSource } from "@/lib/types";
 import React from "react";
 
 export const threatTypeConfig: Record<ThreatType, { icon: React.ReactNode; color: string; label: string }> = {
-  malware: { icon: React.createElement(Bug, { className: "h-4 w-4" }), color: "bg-red-500", label: "Malware" },
-  c2: { icon: React.createElement(Crosshair, { className: "h-4 w-4" }), color: "bg-purple-500", label: "C2 Server" },
-  phishing: { icon: React.createElement(Fish, { className: "h-4 w-4" }), color: "bg-orange-500", label: "Phishing" },
-  botnet: { icon: React.createElement(Bot, { className: "h-4 w-4" }), color: "bg-pink-500", label: "Botnet" },
-  ransomware: { icon: React.createElement(Skull, { className: "h-4 w-4" }), color: "bg-red-700", label: "Ransomware" },
-  adware: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-yellow-500", label: "Adware" },
-  tracker: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-gray-500", label: "Tracker" },
+  malware: { icon: React.createElement(Bug, { className: "h-4 w-4" }), color: "bg-red-500", label: "malware" },
+  c2: { icon: React.createElement(Crosshair, { className: "h-4 w-4" }), color: "bg-purple-500", label: "c2" },
+  phishing: { icon: React.createElement(Fish, { className: "h-4 w-4" }), color: "bg-orange-500", label: "phishing" },
+  botnet: { icon: React.createElement(Bot, { className: "h-4 w-4" }), color: "bg-pink-500", label: "botnet" },
+  ransomware: { icon: React.createElement(Skull, { className: "h-4 w-4" }), color: "bg-red-700", label: "ransomware" },
+  adware: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-yellow-500", label: "adware" },
+  tracker: { icon: React.createElement(Activity, { className: "h-4 w-4" }), color: "bg-gray-500", label: "tracker" },
   // Content categories
   porn: { icon: React.createElement(Heart, { className: "h-4 w-4" }), color: "bg-pink-600", label: "porn" },
   gambling: { icon: React.createElement(Dice1, { className: "h-4 w-4" }), color: "bg-emerald-600", label: "gambling" },

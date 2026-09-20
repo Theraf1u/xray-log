@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { authFetch } from "@/contexts/auth-context";
+import { PageSizeSelect, usePageSize } from "@/components/ui/page-size-select";
 import Link from "next/link";
 import {
   Table,
@@ -47,7 +48,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PaginationControls, usePagination } from "@/components/ui/data-table";
 import { Users, Globe, ExternalLink, ChevronDown, AlertTriangle, RefreshCw, Server, Smartphone, Monitor, Trash2, Loader2, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { SubscriptionAbuse, TimeRange } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 
@@ -89,7 +90,7 @@ export function SubscriptionAbuseTable({
   const [sortBy, setSortBy] = useState<"score" | "ips" | "hwids" | "requests">("score");
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = usePageSize(25);
 
   const fetchData = useCallback(async () => {
     try {
@@ -104,7 +105,7 @@ export function SubscriptionAbuseTable({
       );
       setAbusers(sorted);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : tCommon("unknown"));
     } finally {
       setLoading(false);
     }
@@ -225,10 +226,10 @@ export function SubscriptionAbuseTable({
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground gap-2">
         <AlertTriangle className="h-8 w-8 opacity-50" />
-        <p>Failed to load data: {error}</p>
+        <p>{tCommon("failedToLoadData")}: {error}</p>
         <Button variant="outline" size="sm" onClick={fetchData}>
           <RefreshCw className="h-4 w-4 mr-2" />
-          Retry
+          {tCommon("retry")}
         </Button>
       </div>
     );
@@ -356,7 +357,7 @@ export function SubscriptionAbuseTable({
                           </TooltipTrigger>
                           <TooltipContent>
                             <p>Abuse Score: {abuser.abuse_score || 0}/100</p>
-                            <p className="text-xs text-muted-foreground">Based on IP, Node, HWID diversity</p>
+                            <p className="text-xs text-muted-foreground">{t("basedOnDiversity")}</p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
@@ -390,7 +391,7 @@ export function SubscriptionAbuseTable({
                                 {abuser.unique_ips}
                               </Badge>
                             </TooltipTrigger>
-                            <TooltipContent>Unique IPs</TooltipContent>
+                            <TooltipContent>{tCommon("uniqueIps")}</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                         <TooltipProvider>
@@ -401,7 +402,7 @@ export function SubscriptionAbuseTable({
                                 {abuser.unique_nodes || 0}
                               </Badge>
                             </TooltipTrigger>
-                            <TooltipContent>Unique Nodes</TooltipContent>
+                            <TooltipContent>{tCommon("uniqueNodes")}</TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
                         {(abuser.unique_hwids || 0) > 0 && (
@@ -413,7 +414,7 @@ export function SubscriptionAbuseTable({
                                   {abuser.unique_hwids}
                                 </Badge>
                               </TooltipTrigger>
-                              <TooltipContent>HWID Devices</TooltipContent>
+                              <TooltipContent>{tCommon("hwidDevices")}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         )}
@@ -449,7 +450,7 @@ export function SubscriptionAbuseTable({
                     {/* Nodes list */}
                     {abuser.nodes && abuser.nodes.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        <span className="text-sm text-muted-foreground mr-1">Nodes:</span>
+                        <span className="text-sm text-muted-foreground mr-1">{tCommon("nodesLabel")}</span>
                         {abuser.nodes.map((node) => (
                           <Badge key={node} variant="secondary" className="text-xs">
                             {node}
@@ -461,14 +462,14 @@ export function SubscriptionAbuseTable({
                     {/* HWID devices */}
                     {abuser.hwids && abuser.hwids.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        <span className="text-sm text-muted-foreground mr-1">Devices:</span>
+                        <span className="text-sm text-muted-foreground mr-1">{tCommon("devicesLabel")}</span>
                         {abuser.hwids.map((hwid) => (
                           <TooltipProvider key={hwid.hwid}>
                             <Tooltip>
                               <TooltipTrigger>
                                 <Badge variant="outline" className="text-xs gap-1">
                                   <Smartphone className="h-3 w-3" />
-                                  {hwid.platform || "Unknown"}
+                                  {hwid.platform || tCommon("unknown")}
                                   {hwid.device_model && ` (${hwid.device_model})`}
                                 </Badge>
                               </TooltipTrigger>
@@ -494,7 +495,7 @@ export function SubscriptionAbuseTable({
                                 ) : (
                                   <Trash2 className="h-3 w-3" />
                                 )}
-                                <span className="ml-1">Clear</span>
+                                <span className="ml-1">{tCommon("clear")}</span>
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent onClick={(e) => e.stopPropagation()}>
@@ -523,11 +524,11 @@ export function SubscriptionAbuseTable({
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>IP Address</TableHead>
-                          <TableHead>Location</TableHead>
-                          <TableHead className="hidden sm:table-cell">Node</TableHead>
-                          <TableHead className="text-right">Requests</TableHead>
-                          <TableHead className="hidden md:table-cell">Last Seen</TableHead>
+                          <TableHead>{tCommon("ipAddress")}</TableHead>
+                          <TableHead>{tCommon("location")}</TableHead>
+                          <TableHead className="hidden sm:table-cell">{tCommon("node")}</TableHead>
+                          <TableHead className="text-right">{tCommon("requests")}</TableHead>
+                          <TableHead className="hidden md:table-cell">{tCommon("lastSeen")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -553,7 +554,7 @@ export function SubscriptionAbuseTable({
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm hidden md:table-cell">
                               {isValidDate(ip.last_seen)
-                                ? formatDistanceToNow(new Date(ip.last_seen), { addSuffix: true })
+                                ? formatDistanceToNowRu(new Date(ip.last_seen))
                                 : "—"}
                             </TableCell>
                           </TableRow>
@@ -569,12 +570,15 @@ export function SubscriptionAbuseTable({
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {filteredAbusers.length > 0 && (
         <div className="flex items-center justify-between pt-2">
-          <p className="text-sm text-muted-foreground">
-            {t("page", { page, total: totalPages })}
-          </p>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              {t("page", { page, total: totalPages })}
+            </p>
+            <PageSizeSelect value={pageSize} onChange={(size) => { setPageSize(size); setPage(1); }} />
+          </div>
+          {totalPages > 1 && <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -593,7 +597,7 @@ export function SubscriptionAbuseTable({
               {t("next")}
               <ChevronRight className="h-4 w-4" />
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </div>

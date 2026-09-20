@@ -14,7 +14,7 @@ import {
   AlertTriangle,
   Loader2
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { useTranslations } from "next-intl";
 
 interface ServiceStatus {
@@ -165,7 +165,7 @@ export function SystemHealth({
               {statusBadge(service.status)}
               {service.lastUpdate && (
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {formatDistanceToNow(new Date(service.lastUpdate), { addSuffix: true })}
+                  {formatDistanceToNowRu(new Date(service.lastUpdate))}
                 </p>
               )}
             </div>
