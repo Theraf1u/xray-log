@@ -113,7 +113,7 @@ sudo ss -tlnp | grep -E ':(8237|3925) '
 ### Шаг 2. Установка через скрипт (рекомендуется)
 
 ```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 ```
 
@@ -465,7 +465,7 @@ rclone config                  # настрой remote один раз
 
 ```bash
 # 1. На новом сервере — стандартная установка (Часть 1, Шаги 1-4)
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 # (запомни новые tokens — их подменишь старыми ниже!)
 
@@ -616,7 +616,7 @@ grep '^AGENT_TOKEN=' /opt/xray-analyzer/.env | cut -d= -f2
 Один curl-and-bash. На ноде, замени значения переменных:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="ВСТАВЬ_AGENT_TOKEN_ИЗ_SERVER_ENV" \
        NODE_ID="germany-1" \
@@ -650,7 +650,7 @@ if ! command -v docker >/dev/null; then
 fi
 
 # 2. Клонируй репо
-sudo git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+sudo git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 cd /opt/xray-analyzer
 
 # 3. Создай .env агента (замени значения)
@@ -983,4 +983,4 @@ sudo rm /etc/logrotate.d/remnanode
 
 - [README.md](./README.md) — общий обзор и архитектура
 - [docs/](../docs/) — design specs, plans, ADR
-- Issues: https://github.com/qwertyhq/xray-analyzer/issues
+- Issues: https://github.com/Theraf1u/xray-log/issues

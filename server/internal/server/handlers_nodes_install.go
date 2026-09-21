@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"github.com/xray-log-analyzer/server/internal/storage"
+	"log"
 )
 
 // nodeIDPattern matches what install-agent.sh and the WebSocket handshake
@@ -53,7 +55,7 @@ func (s *Server) handleNodeInstallCommand(w http.ResponseWriter, r *http.Request
 	if s.agentToken == "" {
 		resp.Command = "# AGENT_TOKEN не задан на сервере — задайте его в .env, иначе агенты не смогут подключиться"
 	} else {
-		resp.Command = "curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | sudo " +
+		resp.Command = "curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-agent.sh | sudo " +
 			"SERVER_URL=\"" + serverURL + "\" " +
 			"AUTH_TOKEN=\"" + s.agentToken + "\" " +
 			"NODE_ID=\"" + nodeID + "\" " +
@@ -79,4 +81,118 @@ func publicWebSocketURL(r *http.Request) string {
 		scheme = "ws"
 	}
 	return scheme + "://" + host + "/ws"
+}
+
+
+// RemnaNodeOptionView adds the live, verified connection state of the
+// linked agent (if any) to storage.RemnaNodeOption. "Linked" only means a
+// row exists in node_remna_map — it says nothing about whether that agent
+// is actually talking to us right now, so the picker checks the live
+// WebSocket client map rather than trusting the DB link blindly.
+type RemnaNodeOptionView struct {
+	*storage.RemnaNodeOption
+	LinkedAgentConnected *bool `json:"linked_agent_connected,omitempty"`
+}
+
+// handleRemnaNodesList returns every synced Remnawave panel node for the
+// manual link picker (see node_remna_map in schema.sql for why linking is
+// manual: node_id and the panel's node name follow no reliable convention,
+// and the panel has many stale/duplicate entries).
+func (s *Server) handleRemnaNodesList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	opts, err := s.storage.ListRemnaNodeOptions(ctx)
+	if err != nil {
+		log.Printf("handleRemnaNodesList: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	s.clientsMu.RLock()
+	views := make([]*RemnaNodeOptionView, 0, len(opts))
+	for _, o := range opts {
+		v := &RemnaNodeOptionView{RemnaNodeOption: o}
+		if o.LinkedTo != nil {
+			_, connected := s.clients[*o.LinkedTo]
+			views = append(views, &RemnaNodeOptionView{RemnaNodeOption: o, LinkedAgentConnected: &connected})
+			continue
+		}
+		views = append(views, v)
+	}
+	s.clientsMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(views)
+}
+
+// LinkNodeRemnaRequest is the body for POST /api/nodes/link-remnawave.
+type LinkNodeRemnaRequest struct {
+	NodeID    string `json:"node_id"`
+	RemnaUUID string `json:"remna_uuid"`
+}
+
+// handleLinkNodeRemna records an admin-chosen link between an agent node_id
+// and a Remnawave panel node. Always an explicit admin action — never
+// inferred automatically.
+func (s *Server) handleLinkNodeRemna(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req LinkNodeRemnaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.NodeID == "" || req.RemnaUUID == "" {
+		http.Error(w, "node_id and remna_uuid are required", http.StatusBadRequest)
+		return
+	}
+	if err := s.storage.LinkNodeRemna(r.Context(), req.NodeID, req.RemnaUUID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnlinkNodeRemnaRequest is the body for POST /api/nodes/unlink-remnawave.
+type UnlinkNodeRemnaRequest struct {
+	NodeID string `json:"node_id"`
+}
+
+// handleUnlinkNodeRemna removes a previously approved link.
+func (s *Server) handleUnlinkNodeRemna(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req UnlinkNodeRemnaRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.NodeID == "" {
+		http.Error(w, "node_id is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.storage.UnlinkNodeRemna(r.Context(), req.NodeID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+
+// handleNodesLive serves the ~1s poll behind the nodes page's live speed,
+// uptime and connection-count display. Deliberately its own tiny endpoint
+// rather than folded into /api/nodes: that response is cached for 10s and
+// carries every column, both wrong for something polled every second.
+func (s *Server) handleNodesLive(w http.ResponseWriter, r *http.Request) {
+	live, err := s.storage.GetNodesLive(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(live)
 }

@@ -113,7 +113,7 @@ Empty = all good. If something is bound — find and stop it, otherwise compose 
 ### Step 2. Install via the script (recommended)
 
 ```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 ```
 
@@ -465,7 +465,7 @@ If the main server has died and you need to bring the analyzer up on a fresh mac
 
 ```bash
 # 1. On the new server — the standard install (Part 1, Steps 1-4)
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 sudo bash /opt/xray-analyzer/scripts/install-server.sh
 # (remember the new tokens — you'll swap them with the old ones below!)
 
@@ -616,7 +616,7 @@ Copy the output — it's a long hex string like `e9b8e8b0cb4aa2bb1d78a16955186ed
 A single curl-and-bash. On the node, fill in the variable values:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="PASTE_AGENT_TOKEN_FROM_SERVER_ENV" \
        NODE_ID="germany-1" \
@@ -650,7 +650,7 @@ if ! command -v docker >/dev/null; then
 fi
 
 # 2. Clone the repo
-sudo git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+sudo git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 cd /opt/xray-analyzer
 
 # 3. Create the agent .env (replace the values)
@@ -983,4 +983,4 @@ sudo rm /etc/logrotate.d/remnanode
 
 - [README.en.md](./README.en.md) — overview and architecture
 - [docs/](../docs/) — design specs, plans, ADRs
-- Issues: https://github.com/qwertyhq/xray-analyzer/issues
+- Issues: https://github.com/Theraf1u/xray-log/issues

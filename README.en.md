@@ -132,7 +132,7 @@ Detailed block analytics: top domains, top users, time series, search.
 A single script installs Postgres + Redis + analyzer-server from source. Supports Ubuntu 22.04+ / Debian 12+. Works on bare metal, a VM, or a container with Docker access.
 
 ```bash
-git clone https://github.com/qwertyhq/xray-analyzer.git /opt/xray-analyzer
+git clone https://github.com/Theraf1u/xray-log.git /opt/xray-analyzer
 cd /opt/xray-analyzer
 sudo bash scripts/install-server.sh
 ```
@@ -183,7 +183,7 @@ analyzer.example.com {
 Run on every node where Xray is running (Remnawave node, standalone VPN endpoint, etc.):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/qwertyhq/xray-analyzer/main/scripts/install-agent.sh | \
+curl -fsSL https://raw.githubusercontent.com/Theraf1u/xray-log/main/scripts/install-agent.sh | \
   sudo SERVER_URL="wss://analyzer.example.com/ws" \
        AUTH_TOKEN="<AGENT_TOKEN from server .env>" \
        NODE_ID="germany-1" \
@@ -437,4 +437,4 @@ Internal project. PRs welcome — focus areas:
 - UI components (vanilla shadcn / Radix)
 - Performance improvements
 
-Issue tracker: https://github.com/qwertyhq/xray-analyzer/issues
+Issue tracker: https://github.com/Theraf1u/xray-log/issues
