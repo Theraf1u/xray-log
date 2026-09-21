@@ -84,12 +84,12 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
         if (!res.ok) throw new Error(await res.text());
         return res.json();
       })
-      .then((data: RemnaNodeOption[]) => setOptions(data))
+      .then((data: RemnaNodeOption[]) => setOptions(data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : t("genericError")))
       .finally(() => setLoadingOptions(false));
     authFetch("/api/nodes/pair/pending")
       .then(async (res) => (res.ok ? ((await res.json()) as PairingRequest[]) : []))
-      .then(setPendingPairings)
+      .then((data) => setPendingPairings(data ?? []))
       .catch(() => setPendingPairings([]));
   }, [open, t]);
 

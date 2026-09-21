@@ -338,7 +338,11 @@ func (s *Storage) ListRemnaNodeOptions(ctx context.Context) ([]*RemnaNodeOption,
 	}
 	defer rows.Close()
 
-	var out []*RemnaNodeOption
+	// See ListPendingPairingRequests for why this is []*T{} and not a nil
+	// var: nil encodes to JSON null, and both callers of this endpoint
+	// (LinkNodeSheet and AddNodeDialog) call .filter()/array methods on
+	// the response with no null guard.
+	out := []*RemnaNodeOption{}
 	for rows.Next() {
 		o := &RemnaNodeOption{}
 		var isDisabledInt, isConnectedInt int
@@ -458,7 +462,10 @@ func (s *Storage) GetNodesLive(ctx context.Context) ([]*NodeLiveView, error) {
 	}
 	defer rows.Close()
 
-	var out []*NodeLiveView
+	// Same reasoning as ListRemnaNodeOptions/ListPendingPairingRequests:
+	// nodes-table.tsx does `new Map(data.map(...))` on this response with
+	// no null guard, so an empty result must stay a JSON array, not null.
+	out := []*NodeLiveView{}
 	for rows.Next() {
 		v := &NodeLiveView{}
 		var isConnectedInt, isDisabledInt int
@@ -574,7 +581,11 @@ func (s *Storage) ListPendingPairingRequests(ctx context.Context) ([]*PairingReq
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*PairingRequest
+	// Initialized, not nil: encoding/json turns a nil slice into JSON
+	// null, and the frontend does `.length` on this straight off the
+	// response — an empty *array* is a valid state here (no pending
+	// codes), a null response isn't something that call site expects.
+	out := []*PairingRequest{}
 	for rows.Next() {
 		p := &PairingRequest{}
 		var approvedInt int
