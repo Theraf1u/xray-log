@@ -168,6 +168,7 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		) online ON online.node_text_id = ns.node_id
 		LEFT JOIN node_remna_map m ON m.node_id = ns.node_id
 		LEFT JOIN remna_nodes rn ON rn.uuid = m.remna_uuid
+		WHERE NOT EXISTS (SELECT 1 FROM deleted_node_ids d WHERE d.node_id = ns.node_id)
 		ORDER BY ns.total_requests DESC
 	`, windowAgo)
 	if err != nil {
@@ -250,63 +251,28 @@ func (s *Storage) remnaOnlineCounts(ctx context.Context) (map[string]int, error)
 	return out, nil
 }
 
-// DeleteNode removes a node and all its related data
+// DeleteNode unlinks a node from the panel and hides it from the live
+// dashboard. It deliberately does NOT delete node_stats, user_stats,
+// blacklist_matches, alerts, hourly_stats, or any other historical data —
+// user logs are kept forever regardless of whether a node is removed from
+// the active list. "Deleted" only means: drop the node_remna_map link, and
+// tombstone the node_id in deleted_node_ids so (a) GetNodeStats's WHERE NOT
+// EXISTS excludes it from the dashboard even though its rows still exist,
+// and (b) the WS handshake (handleWebSocket) refuses a reconnect from that
+// node_id, so a still-running agent can't just resurrect it by reconnecting.
+// Re-adding the same node_id via any of the three add-node flows clears the
+// tombstone (see LinkNodeRemna / ClearNodeTombstone) and its history picks
+// back up right where it left off, instead of starting from zero.
 func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
-	// Resolve text node_id to the smallint FK used in child tables.
-	// If the node doesn't exist in nodes table yet, nothing to cascade.
-	var nid int16
-	_ = s.pool.QueryRow(ctx, `SELECT id FROM nodes WHERE node_id = $1`, nodeID).Scan(&nid)
-
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 
-	// Tables that reference nodes(id) as smallint FK — use resolved id.
-	if nid > 0 {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM user_stats WHERE node_id = $1", nid); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("delete user_stats: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM blacklist_matches WHERE node_id = $1", nid); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("delete blacklist_matches: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM alerts WHERE node_id = $1", nid); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("delete alerts: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM hourly_stats WHERE node_id = $1", nid); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("delete hourly_stats: %w", err)
-		}
-	}
-
-	// node_stats uses text node_id as PK.
-	if _, err := tx.ExecContext(ctx, "DELETE FROM node_stats WHERE node_id = $1", nodeID); err != nil {
-		tx.Rollback()
-		return fmt.Errorf("delete node_stats: %w", err)
-	}
-
-	// A "deleted" node must actually stay gone: also drop the panel link
-	// (node_remna_map) and tombstone the node_id. Without the tombstone, an agent that's still running just
-	// reconnects with the same node_id and UpdateNodeStats's upsert
-	// resurrects the row within seconds — this was reported as "delete
-	// does nothing". The WS handshake (handleWebSocket) checks the
-	// tombstone and refuses the connection, so even a still-running agent
-	// can't repopulate it. Re-adding the same node_id via any of the three
-	// add-node flows removes the tombstone (see UnlinkNodeRemna / LinkNodeRemna).
 	if _, err := tx.ExecContext(ctx, "DELETE FROM node_remna_map WHERE node_id = $1", nodeID); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("delete node_remna_map: %w", err)
 	}
-	// Deliberately NOT deleting the nodes row itself: a dozen+ tables
-	// (bridged_flows, request_events, threat_matches, user_destinations,
-	// etc.) carry FK REFERENCES nodes(id), and this list grows over time.
-	// Trying to cascade all of them here is exactly the kind of thing that
-	// silently breaks again the next time someone adds a table. The
-	// tombstone below is what actually blocks the node from coming back;
-	// the orphaned nodes/smallint-id row is harmless historical metadata.
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO deleted_node_ids (node_id) VALUES ($1)
 		ON CONFLICT (node_id) DO UPDATE SET deleted_at = now()
@@ -318,7 +284,10 @@ func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	s.evictNodeID(nodeID)
+	// GetNodeStats caches its result for CacheTTLShort (10s); without this,
+	// a deleted node stays visible in /api/nodes for up to that long even
+	// though the WHERE NOT EXISTS clause already excludes it going forward.
+	s.InvalidateCache("node_stats")
 	return nil
 }
 
@@ -468,7 +437,11 @@ func (s *Storage) LinkNodeRemna(ctx context.Context, nodeID, remnaUUID string) e
 	`, nodeID, remnaUUID); err != nil {
 		return err
 	}
-	return s.ClearNodeTombstone(ctx, nodeID)
+	if err := s.ClearNodeTombstone(ctx, nodeID); err != nil {
+		return err
+	}
+	s.InvalidateCache("node_stats")
+	return nil
 }
 
 // UnlinkNodeRemna removes a previously approved node_id -> panel node link.

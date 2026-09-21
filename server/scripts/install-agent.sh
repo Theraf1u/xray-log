@@ -221,10 +221,8 @@ if [[ ! -f "$LOGROTATE_FILE" ]]; then
     log "Настраиваю logrotate для $LOG_PATH/*.log"
     cat > "$LOGROTATE_FILE" <<EOF
 $LOG_PATH/*.log {
-    size 50M
-    rotate 5
-    compress
-    delaycompress
+    size 500M
+    rotate 0
     notifempty
     missingok
     copytruncate
