@@ -92,7 +92,7 @@ type DashboardUpdate struct {
 }
 
 // New creates a new Server
-func New(addr string, allowedOrigins []string, apiToken, agentToken string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist) *Server {
+func New(addr string, allowedOrigins []string, apiToken, agentToken string, analyzer *analyzer.Analyzer, storage *storage.Storage, bl *blacklist.Blacklist, ipInfo *ipinfo.Service) *Server {
 	s := &Server{
 		addr:             addr,
 		allowedOrigins:   allowedOrigins,
@@ -101,7 +101,7 @@ func New(addr string, allowedOrigins []string, apiToken, agentToken string, anal
 		analyzer:         analyzer,
 		storage:          storage,
 		blacklist:        bl,
-		ipInfo:           ipinfo.NewService(),
+		ipInfo:           ipInfo,
 		clients:          make(map[string]*Client),
 		dashboardClients: make(map[*DashboardClient]bool),
 		broadcastChan:    make(chan *DashboardUpdate, 100),

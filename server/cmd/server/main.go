@@ -16,6 +16,7 @@ import (
 	"github.com/xray-log-analyzer/server/internal/blacklist"
 	"github.com/xray-log-analyzer/server/internal/config"
 	"github.com/xray-log-analyzer/server/internal/correlation"
+	"github.com/xray-log-analyzer/server/internal/geoip"
 	"github.com/xray-log-analyzer/server/internal/ipinfo"
 	"github.com/xray-log-analyzer/server/internal/models"
 	"github.com/xray-log-analyzer/server/internal/rediscache"
@@ -143,8 +144,15 @@ func main() {
 		log.Printf("analyzer: bridge correlation active: nodes=%v window=%s", cfg.BridgeNodeIDs, cfg.BridgeCorrelationWindow)
 	}
 
+	// Local offline geo-IP database (DB-IP City Lite), refreshed daily in the
+	// background — see internal/geoip for why this exists instead of calling
+	// an external API per lookup.
+	geoSvc := geoip.NewService("/app/data/geoip")
+	geoSvc.Start(ctx)
+
 	// Initialize IP info service for geo lookups
 	ipInfoSvc := ipinfo.NewService()
+	ipInfoSvc.SetGeoIP(geoSvc)
 	anal.SetIPInfo(ipInfoSvc)
 
 	// Initialize threat intelligence service
@@ -188,7 +196,7 @@ func main() {
 	}()
 
 	// Initialize and start server
-	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl)
+	srv := server.New(cfg.ListenAddr, cfg.AllowedOrigins, cfg.APIToken, cfg.AgentToken, anal, store, bl, ipInfoSvc)
 	srv.SetTelegramBot(telegramBot)
 	srv.SetThreatIntel(threatIntelSvc)
 	srv.SetPartitionManager(pm)

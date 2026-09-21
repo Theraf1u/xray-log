@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/xray-log-analyzer/server/internal/geoip"
 )
 
 // IPInfo contains geolocation and ISP information for an IP address
@@ -57,6 +59,7 @@ type Service struct {
 	rateLimit chan struct{}
 	rateMu sync.Mutex
 	lastRequest time.Time
+	geo         *geoip.Service
 
 	// Circuit breaker: ip-api.com is unreachable from some networks (DPI/DNS
 	// interception silently returns a black-holed IP, so the request just
@@ -93,6 +96,14 @@ func NewService() *Service {
 	return s
 }
 
+// SetGeoIP wires in the local offline database as the primary lookup path.
+// Lookup falls back to the ip-api.com network call only when this returns
+// an error (e.g. before the first background download completes), so the
+// app still works before the local database is ready.
+func (s *Service) SetGeoIP(g *geoip.Service) {
+	s.geo = g
+}
+
 // cleanupCache removes expired entries periodically
 func (s *Service) cleanupCache() {
 	ticker := time.NewTicker(1 * time.Hour)
@@ -119,6 +130,28 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 		return info, nil
 	}
 	s.mu.RUnlock()
+
+	// Local offline database first: sub-millisecond, no network dependency.
+	// Only falls through to the external API below on the first ever
+	// startup, before the daily updater's first download has completed.
+	if s.geo != nil {
+		if geoInfo, err := s.geo.Lookup(ip); err == nil {
+			info := &IPInfo{
+				IP:          ip,
+				Country:     geoInfo.Country,
+				CountryCode: geoInfo.CountryCode,
+				Region:      geoInfo.Region,
+				City:        geoInfo.City,
+				Lat:         geoInfo.Lat,
+				Lon:         geoInfo.Lon,
+				CachedAt:    time.Now(),
+			}
+			s.mu.Lock()
+			s.cache[ip] = info
+			s.mu.Unlock()
+			return info, nil
+		}
+	}
 
 	if fallback, tripped := s.breakerFallback(ip); tripped {
 		return fallback, nil
@@ -276,6 +309,30 @@ func (s *Service) LookupBatch(ctx context.Context, ips []string) (map[string]*IP
 		}
 	}
 	s.mu.RUnlock()
+
+	// Local offline database next — handles the common case (database
+	// loaded) with zero network calls. Only IPs it can't resolve go to the
+	// external API's batch endpoint below.
+	if s.geo != nil && len(toFetch) > 0 {
+		stillMissing := toFetch[:0]
+		for _, ip := range toFetch {
+			geoInfo, err := s.geo.Lookup(ip)
+			if err != nil {
+				stillMissing = append(stillMissing, ip)
+				continue
+			}
+			info := &IPInfo{
+				IP: ip, Country: geoInfo.Country, CountryCode: geoInfo.CountryCode,
+				Region: geoInfo.Region, City: geoInfo.City, Lat: geoInfo.Lat, Lon: geoInfo.Lon,
+				CachedAt: time.Now(),
+			}
+			result[ip] = info
+			s.mu.Lock()
+			s.cache[ip] = info
+			s.mu.Unlock()
+		}
+		toFetch = stillMissing
+	}
 
 	if len(toFetch) == 0 {
 		return result, nil
