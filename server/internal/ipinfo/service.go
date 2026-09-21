@@ -1,6 +1,7 @@
 package ipinfo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -301,19 +302,15 @@ func (s *Service) LookupBatch(ctx context.Context, ips []string) (map[string]*IP
 		return result, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return result, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Body = http.NoBody
 
-	// Use custom request with body
-	req2, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
-	req2.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.client.Post(url, "application/json", nil)
+	resp, err := s.client.Do(req)
 	if err != nil {
+		s.recordFailure()
 		// Fallback to individual lookups
 		for _, ip := range toFetch {
 			if info, err := s.fetchFromAPI(ctx, ip); err == nil {
@@ -328,8 +325,7 @@ func (s *Service) LookupBatch(ctx context.Context, ips []string) (map[string]*IP
 		return result, nil
 	}
 	defer resp.Body.Close()
-
-	_ = body // Used in actual POST
+	s.recordSuccess()
 
 	var responses []ipAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&responses); err != nil {

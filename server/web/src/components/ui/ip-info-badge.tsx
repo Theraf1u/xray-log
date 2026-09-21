@@ -22,6 +22,32 @@ const ipInfoCache = new Map<string, IPInfo>();
 // need the raw geo fields (e.g. rendering the IP address and the city in
 // two separate table columns) don't have to duplicate the fetch or re-parse
 // IPInfoBadge's own rendered output.
+// Warms the shared cache for many IPs with one network round trip instead
+// of one per IP. The backend's batch endpoint (POST /api/ipinfo) already
+// existed and already dedupes against its own server-side cache — nothing
+// here previously called it, so a table with N distinct IPs (e.g. a user's
+// IP history) fired N serialized single-IP lookups against an external geo
+// API that can take several seconds per call on a slow network path, and
+// every badge sat in its loading state until its turn came up.
+export async function prefetchIPInfoBatch(ips: string[]): Promise<void> {
+  const toFetch = [...new Set(ips)].filter((ip) => !ipInfoCache.has(ip));
+  if (toFetch.length === 0) return;
+  try {
+    const res = await authFetch("/api/ipinfo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toFetch),
+    });
+    if (!res.ok) return;
+    const data: Record<string, IPInfo> = await res.json();
+    for (const [ip, info] of Object.entries(data)) {
+      ipInfoCache.set(ip, info);
+    }
+  } catch {
+    // Individual useIPInfo() calls still retry per-IP on their own.
+  }
+}
+
 export function useIPInfo(ip: string): { info: IPInfo | null; loading: boolean } {
   const [info, setInfo] = useState<IPInfo | null>(ipInfoCache.get(ip) || null);
   const [loading, setLoading] = useState(!ipInfoCache.has(ip));

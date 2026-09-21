@@ -16,7 +16,7 @@ import { Globe, Wifi } from "lucide-react";
 import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { UserIPHistory } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
-import { useIPInfo } from "@/components/ui/ip-info-badge";
+import { useIPInfo, prefetchIPInfoBatch } from "@/components/ui/ip-info-badge";
 import { useTranslations } from "next-intl";
 
 // Country flag emoji from country code
@@ -45,6 +45,11 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
         if (!res.ok) throw new Error("Failed to fetch IP history");
         const data = await res.json();
         setHistory(data || []);
+        // One batched lookup for every IP on the page instead of each
+        // HistoryRow firing its own slow single-IP request in sequence.
+        if (data && data.length > 0) {
+          prefetchIPInfoBatch(data.map((ip: UserIPHistory) => ip.ip_address));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : tc("unknown"));
       } finally {
