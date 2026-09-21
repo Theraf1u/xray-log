@@ -281,7 +281,7 @@
     "threatConf": "Conf",
     "threatNode": "Node",
     "ipHistory": "IP Address History",
-    "ipHistoryDesc": "Last 20 IP addresses used by this user",
+    "ipHistoryDesc": "Every IP address used by this user, kept forever",
     "visitedDestinations": "Visited Destinations",
     "visitedDesc": "Resources visited by this user (sorted by request count)",
     "blacklistMatches": "Blacklist Matches",
