@@ -47,7 +47,7 @@ export default async function RootLayout({
               <WebSocketProvider>
                 <Header />
                 <main className="min-h-[calc(100vh-3.5rem)]">
-                  {children}
+                  <div className="mx-auto w-full max-w-[1600px]">{children}</div>
                 </main>
                 <Footer />
                 <FloatingAIChat />

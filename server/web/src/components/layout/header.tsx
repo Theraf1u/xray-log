@@ -103,7 +103,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center px-4 md:px-8">
+      <div className="mx-auto flex h-14 max-w-[1600px] items-center px-4 md:px-8">
         <Link href="/dashboard" className="flex items-center gap-2 font-bold">
           <Activity className="h-5 w-5 text-primary" />
           <span className="hidden sm:inline">{t("appName")}</span>
@@ -253,7 +253,7 @@ export function Header() {
           tenth visibly empty, and gave every destination an identical bordered
           box — no hierarchy, maximum chrome. Pills wrap naturally, so the row
           is always full whatever the item count. */}
-      <nav className="hidden px-4 pb-3 md:block md:px-8">
+      <nav className="mx-auto hidden max-w-[1600px] px-4 pb-3 md:block md:px-8">
         <div className="glass flex flex-wrap items-center gap-1 p-1">
           {navItems.map((item) => (
             <Link
