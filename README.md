@@ -10,6 +10,8 @@
 
 </div>
 
+> Изначально создан на базе [qwertyhq/xray-analyzer](https://github.com/qwertyhq/xray-analyzer), с тех пор существенно переработан и расширен в этом репозитории.
+
 ---
 
 ## Зачем это нужно
