@@ -816,25 +816,12 @@ func (s *Storage) RecordUserIP(ctx context.Context, userEmail, ipAddress, nodeID
 			request_count = user_ip_history.request_count + 1
 	`, userUUID, ipAddress, nodeIntID, countryCode, countryName, city, now, now)
 
-	if err != nil {
-		return err
-	}
-
-	// Keep only last 20 IPs per user (delete oldest)
-	_, err = s.pool.Exec(ctx, `
-		DELETE FROM user_ip_history
-		WHERE user_email = $1 AND id NOT IN (
-			SELECT id FROM user_ip_history
-			WHERE user_email = $2
-			ORDER BY last_seen DESC
-			LIMIT 20
-		)
-	`, userUUID, userUUID)
-
 	return err
 }
 
-// GetUserIPHistory gets the IP history for a user (last 20 IPs).
+// GetUserIPHistory gets the full IP history for a user — every distinct IP
+// ever seen, kept forever (this used to be pruned to the most recent 20 per
+// user; that pruning is gone, logs are meant to be retained indefinitely).
 // ip_address (inet) and node_id (smallint FK) are cast/joined to text.
 func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*UserIPHistory, error) {
 	// Resolve userEmail to UUID(s).
@@ -857,7 +844,6 @@ func (s *Storage) GetUserIPHistory(ctx context.Context, userEmail string) ([]*Us
 		LEFT JOIN nodes n ON n.id = h.node_id
 		WHERE h.user_email = ANY($1)
 		ORDER BY h.last_seen DESC
-		LIMIT 20
 	`, searchUUIDs)
 	if err != nil {
 		return nil, err
