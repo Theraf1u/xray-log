@@ -69,6 +69,25 @@ type NodeStats struct {
 	IsConnected    bool      `json:"is_connected"`
 	LastBatchTime  time.Time `json:"last_batch_time"`
 	LastBatchCount int       `json:"last_batch_count"`
+
+	// Remnawave panel enrichment (LEFT JOIN on remna_nodes.name = node_id,
+	// case-insensitive) — nil when this node_id has no matching panel node,
+	// e.g. it hasn't synced yet or the agent's node_id doesn't match the
+	// panel's node name.
+	RemnaName         *string  `json:"remna_name,omitempty"`
+	RemnaAddress      *string  `json:"remna_address,omitempty"`
+	RemnaPort         *int     `json:"remna_port,omitempty"`
+	RemnaCountryCode  *string  `json:"remna_country_code,omitempty"`
+	RemnaTrafficUsed  *int64   `json:"remna_traffic_used,omitempty"`
+	RemnaTrafficTotal *int64   `json:"remna_traffic_total,omitempty"`
+	RemnaIsDisabled   *bool    `json:"remna_is_disabled,omitempty"`
+	RemnaIsConnected  *bool    `json:"remna_is_connected,omitempty"`
+	RemnaTags         []string `json:"remna_tags,omitempty"`
+
+	// Seconds since this agent's current WebSocket connection was
+	// established (not the underlying VPS's own uptime, which this app has
+	// no way to observe) — nil while the agent is offline.
+	AgentUptimeSeconds *int64 `json:"agent_uptime_seconds,omitempty"`
 }
 
 // BlacklistMatch represents a matched blacklist entry

@@ -80,6 +80,16 @@ func (s *Storage) cacheNodeID(nodeID string, id NodeID) {
 	s.nodeIDCacheMu.Unlock()
 }
 
+// evictNodeID drops a node_id from the in-memory smallint-id cache. Called
+// on delete so that if the same node_id is ever re-added, LookupNodeID does
+// a fresh SELECT/INSERT instead of serving a stale id for a row that no
+// longer exists.
+func (s *Storage) evictNodeID(nodeID string) {
+	s.nodeIDCacheMu.Lock()
+	delete(s.nodeIDCache, nodeID)
+	s.nodeIDCacheMu.Unlock()
+}
+
 // UpdateNodeStats updates statistics for a node
 func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests int, blacklistHits int, batchCount int) error {
 	if nodeID == "" {
@@ -278,7 +288,58 @@ func (s *Storage) DeleteNode(ctx context.Context, nodeID string) error {
 		return fmt.Errorf("delete node_stats: %w", err)
 	}
 
-	return tx.Commit()
+	// A "deleted" node must actually stay gone: also drop the panel link
+	// (node_remna_map) and tombstone the node_id. Without the tombstone, an agent that's still running just
+	// reconnects with the same node_id and UpdateNodeStats's upsert
+	// resurrects the row within seconds — this was reported as "delete
+	// does nothing". The WS handshake (handleWebSocket) checks the
+	// tombstone and refuses the connection, so even a still-running agent
+	// can't repopulate it. Re-adding the same node_id via any of the three
+	// add-node flows removes the tombstone (see UnlinkNodeRemna / LinkNodeRemna).
+	if _, err := tx.ExecContext(ctx, "DELETE FROM node_remna_map WHERE node_id = $1", nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("delete node_remna_map: %w", err)
+	}
+	// Deliberately NOT deleting the nodes row itself: a dozen+ tables
+	// (bridged_flows, request_events, threat_matches, user_destinations,
+	// etc.) carry FK REFERENCES nodes(id), and this list grows over time.
+	// Trying to cascade all of them here is exactly the kind of thing that
+	// silently breaks again the next time someone adds a table. The
+	// tombstone below is what actually blocks the node from coming back;
+	// the orphaned nodes/smallint-id row is harmless historical metadata.
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO deleted_node_ids (node_id) VALUES ($1)
+		ON CONFLICT (node_id) DO UPDATE SET deleted_at = now()
+	`, nodeID); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("tombstone node_id: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.evictNodeID(nodeID)
+	return nil
+}
+
+// NodeIsDeleted reports whether nodeID was tombstoned by DeleteNode. Used by
+// the WS handshake to refuse connections from a node_id that was explicitly
+// deleted — otherwise a still-running agent reconnects on its own and its
+// next batch resurrects the "deleted" node within seconds.
+func (s *Storage) NodeIsDeleted(ctx context.Context, nodeID string) (bool, error) {
+	var deleted bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM deleted_node_ids WHERE node_id = $1)`, nodeID).Scan(&deleted)
+	return deleted, err
+}
+
+// ClearNodeTombstone removes nodeID from deleted_node_ids, if present.
+// Called whenever a node_id is (re-)linked to a panel node — via
+// LinkNodeRemna or ApprovePairingRequest — so re-adding a previously-deleted
+// node_id under the same name works immediately instead of the agent being
+// silently refused forever by the WS handshake's tombstone check.
+func (s *Storage) ClearNodeTombstone(ctx context.Context, nodeID string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM deleted_node_ids WHERE node_id = $1", nodeID)
+	return err
 }
 
 // CleanupInactiveNodes removes only the transient dashboard status for nodes
@@ -298,7 +359,6 @@ func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Durat
 	}
 	return int(removed), nil
 }
-
 
 // RemnaNodeOption is a lightweight projection of remna_nodes for the
 // node-linking picker in the admin UI.
@@ -399,14 +459,16 @@ func (s *Storage) LinkNodeRemna(ctx context.Context, nodeID, remnaUUID string) e
 	if nodeID == "" || remnaUUID == "" {
 		return fmt.Errorf("node_id and remna_uuid are required")
 	}
-	_, err := s.db.ExecContext(ctx, `
+	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO node_remna_map (node_id, remna_uuid, linked_at)
 		VALUES ($1, $2, now())
 		ON CONFLICT (node_id) DO UPDATE SET
 			remna_uuid = EXCLUDED.remna_uuid,
 			linked_at = EXCLUDED.linked_at
-	`, nodeID, remnaUUID)
-	return err
+	`, nodeID, remnaUUID); err != nil {
+		return err
+	}
+	return s.ClearNodeTombstone(ctx, nodeID)
 }
 
 // UnlinkNodeRemna removes a previously approved node_id -> panel node link.
@@ -414,7 +476,6 @@ func (s *Storage) UnlinkNodeRemna(ctx context.Context, nodeID string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM node_remna_map WHERE node_id = $1`, nodeID)
 	return err
 }
-
 
 // UpdateNodeConnectIP records the real source IP of an agent's latest
 // WebSocket handshake (see nodes.last_connect_ip in schema.sql). Best-effort:
@@ -430,7 +491,6 @@ func (s *Storage) UpdateNodeConnectIP(ctx context.Context, nodeID, ip string) er
 	_, err = s.pool.Exec(ctx, `UPDATE nodes SET last_connect_ip = $1 WHERE id = $2`, ip, int16(nid))
 	return err
 }
-
 
 // NodeLiveView is the fast-changing subset of a node's Remnawave telemetry,
 // for the ~1s poll used by the nodes page (see UpdateRemnaNodeLive for the
@@ -482,7 +542,6 @@ func (s *Storage) GetNodesLive(ctx context.Context) ([]*NodeLiveView, error) {
 	return out, rows.Err()
 }
 
-
 // NodeIDForRemnaUUID returns the node_id already linked to this Remnawave
 // panel node, if any. Used by the "add node from panel" flow to make
 // picking the same panel tile twice idempotent (reuse the existing link
@@ -525,7 +584,6 @@ func (s *Storage) GetRemnaNodeBasic(ctx context.Context, remnaUUID string) (*Rem
 	b.IsDisabled = isDisabledInt != 0
 	return b, nil
 }
-
 
 // PairingRequest is one row of node_pairing_requests — see schema.sql for
 // the full flow (a fresh node requests a code before it has credentials,

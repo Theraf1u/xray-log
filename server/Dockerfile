@@ -66,6 +66,12 @@ COPY --from=web-builder /app/public /app/web/public
 # Copy default blacklist
 COPY blacklist.txt /app/blacklist.txt
 
+# Copy node/server install scripts, served directly by the app itself
+# (see handleInstallScript) — cheaper and more reliable than depending on
+# the GitHub repo being public, and guarantees the served script always
+# matches the code actually running.
+COPY scripts/ /app/scripts/
+
 # Copy startup script
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh

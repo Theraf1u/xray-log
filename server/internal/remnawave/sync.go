@@ -19,6 +19,7 @@ type StorageWriter interface {
 	UpsertRemnaUsers(ctx context.Context, users []*RemnaUserData) error
 	UpsertRemnaHwidDevices(ctx context.Context, devices []*RemnaHwidData) error
 	UpsertRemnaNode(ctx context.Context, node *RemnaNodeData) error
+	UpdateRemnaNodeLive(ctx context.Context, live *RemnaNodeLiveData) error
 	UpdateRemnaUserHwidCounts(ctx context.Context) error
 	// PruneRemnaUsers removes rows whose uuid is not in liveUUIDs. Called
 	// at the end of a successful syncUsers() so that users deleted on the
@@ -85,7 +86,19 @@ type RemnaNodeData struct {
 	TrafficUsed    int64
 	UsersOnline    int
 	CountryCode    string
+	Tags           []string
 	SyncedAt       time.Time
+}
+
+// RemnaNodeLiveData is the fast-changing subset of a node's state, written
+// by syncLive on its own 1s cadence rather than the full sync interval.
+type RemnaNodeLiveData struct {
+	UUID          string
+	IsConnected   bool
+	UsersOnline   int
+	XrayUptime    float64
+	RxBytesPerSec float64
+	TxBytesPerSec float64
 }
 
 // SyncService handles periodic synchronization with Remnawave API
@@ -224,7 +237,16 @@ func (s *SyncService) ForceSync(ctx context.Context) error {
 // admin panel can supply credentials and flip enabled=true later, and this
 // loop needs to notice and start syncing without a process restart. While
 // unconfigured or paused it just polls at pollInterval and does nothing.
+// liveInterval is how often the lightweight live-telemetry poll runs
+// (speed, xray uptime, online count) — independent of and much faster than
+// the admin-configured full sync interval, since it costs one GET /api/nodes
+// call and a handful of single-column UPDATEs rather than a full
+// user/hwid/node resync.
+const liveInterval = 1 * time.Second
+
 func (s *SyncService) Start(ctx context.Context) {
+	go s.liveLoop(ctx)
+
 	if s.client.IsConfigured() && s.isEnabled() {
 		// Complete the initial sync before starting the timer so large
 		// datasets cannot create two overlapping full syncs after a restart.
@@ -250,6 +272,57 @@ func (s *SyncService) Start(ctx context.Context) {
 			if s.client.IsConfigured() && s.isEnabled() {
 				s.sync(ctx)
 			}
+		}
+	}
+}
+
+// liveLoop refreshes fast-changing per-node telemetry (throughput, xray
+// uptime, live online count) on its own tight interval, decoupled from the
+// slower admin-configured full sync. It never touches users/hwid/traffic
+// totals — those still come from sync() — and it silently does nothing
+// while Remnawave is unconfigured or disabled, same as sync().
+func (s *SyncService) liveLoop(ctx context.Context) {
+	ticker := time.NewTicker(liveInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if s.client.IsConfigured() && s.isEnabled() {
+				s.syncLive(ctx)
+			}
+		}
+	}
+}
+
+// syncLive fetches the current node list and writes just the live columns.
+// Runs far more often than sync(), so it deliberately skips the mutex that
+// guards the full sync — a live tick overlapping a full sync is harmless
+// (both only ever move data forward) and serializing them would make live
+// updates stall for the duration of a full sync.
+func (s *SyncService) syncLive(ctx context.Context) {
+	nodes, err := s.client.GetNodes(ctx)
+	if err != nil {
+		// Transient failures are expected (panel restart, network blip) and
+		// happen every second's worth of ticks if the panel is down; logging
+		// each one would flood the log, so this fails silently and the next
+		// tick tries again.
+		return
+	}
+	for _, node := range nodes {
+		live := &RemnaNodeLiveData{
+			UUID:        node.UUID,
+			IsConnected: node.IsConnected,
+			UsersOnline: node.GetOnlineUsers(),
+			XrayUptime:  node.XrayUptime,
+		}
+		if node.System != nil && node.System.Stats.Interface != nil {
+			live.RxBytesPerSec = node.System.Stats.Interface.RxBytesPerSec
+			live.TxBytesPerSec = node.System.Stats.Interface.TxBytesPerSec
+		}
+		if err := s.storage.UpdateRemnaNodeLive(ctx, live); err != nil {
+			log.Printf("[remnawave] failed to update live telemetry for node %s: %v", node.Name, err)
 		}
 	}
 }
@@ -559,6 +632,7 @@ func (s *SyncService) syncNodes(ctx context.Context) error {
 			TrafficUsed:    trafficUsed,
 			UsersOnline:    usersOnline,
 			CountryCode:    node.CountryCode,
+			Tags:           node.Tags,
 			SyncedAt:       now,
 		}
 

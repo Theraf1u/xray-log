@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "flag-icons/css/flag-icons.min.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -541,6 +542,36 @@
 .glass-inset {
   border-radius: var(--radius);
   background: rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.5));
+}
+
+/* A grid of many equal, independently-meaningful entities (nodes, devices)
+   needs each cell's boundary to actually read at a glance, unlike a single
+   inset row where the hairline between rows is enough. Same material as
+   glass-inset, with a real border instead of relying on background alone. */
+.glass-tile {
+  border-radius: var(--radius);
+  background: rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.5));
+  border: 1px solid rgb(var(--glass-hairline) / calc(var(--glass-hairline-opacity) * 3.5));
+}
+
+.glass-tile:hover {
+  border-color: rgb(var(--glass-hairline) / calc(var(--glass-hairline-opacity) * 6));
+}
+
+/* Status tint for a list of many equal entities (nodes): colour signals
+   connectivity at a glance without splitting the list into two sections.
+   Layered as an extra background-image on top of the existing glass tint
+   rather than replacing it, so the material stays consistent. */
+.glass-tile-online {
+  background:
+    linear-gradient(rgb(34 197 94 / 0.05), rgb(34 197 94 / 0.05)),
+    rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.5));
+}
+
+.glass-tile-offline {
+  background:
+    linear-gradient(rgb(239 68 68 / 0.06), rgb(239 68 68 / 0.06)),
+    rgb(var(--glass-tint) / calc(var(--glass-opacity) * 0.5));
 }
 
 /* Rows inside a surface: separated by a rule, never boxed. */

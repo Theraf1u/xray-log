@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"syscall"
+	"time"
 )
 
 type storageMetrics struct {
@@ -14,7 +15,9 @@ type storageMetrics struct {
 	AnalyzerBytes   int64   `json:"analyzer_bytes"`
 	DiskTotalBytes  uint64  `json:"disk_total_bytes"`
 	DiskFreeBytes   uint64  `json:"disk_free_bytes"`
-	Percent         float64 `json:"percent"`
+	Percent         float64 `json:"percent"` // AnalyzerBytes as a share of the disk — this app's own footprint
+	DiskUsedPercent float64 `json:"disk_used_percent"` // the whole filesystem's actual fill level, everything on it
+	UptimeSeconds   int64   `json:"uptime_seconds"`
 }
 
 // handleStorageMetrics reports Analyzer's PostgreSQL footprint and capacity
@@ -53,7 +56,10 @@ func (s *Server) handleStorageMetrics(w http.ResponseWriter, r *http.Request) {
 	m.DiskFreeBytes = fs.Bavail * uint64(fs.Bsize)
 	if m.DiskTotalBytes > 0 {
 		m.Percent = float64(m.AnalyzerBytes) / float64(m.DiskTotalBytes) * 100
+		diskUsed := m.DiskTotalBytes - m.DiskFreeBytes
+		m.DiskUsedPercent = float64(diskUsed) / float64(m.DiskTotalBytes) * 100
 	}
+	m.UptimeSeconds = int64(time.Since(s.startTime).Seconds())
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "private, max-age=60")
 	json.NewEncoder(w).Encode(m)

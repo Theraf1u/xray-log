@@ -181,8 +181,8 @@ func (s *Storage) UpsertRemnaNode(ctx context.Context, node *remnawave.RemnaNode
 	query := `
 		INSERT INTO remna_nodes (
 			uuid, name, address, port, is_connected, is_disabled, is_traffic_track,
-			traffic_total, traffic_used, users_online, country_code, synced_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			traffic_total, traffic_used, users_online, country_code, tags, synced_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (uuid) DO UPDATE SET
 			name = EXCLUDED.name,
 			address = EXCLUDED.address,
@@ -194,13 +194,44 @@ func (s *Storage) UpsertRemnaNode(ctx context.Context, node *remnawave.RemnaNode
 			traffic_used = EXCLUDED.traffic_used,
 			users_online = EXCLUDED.users_online,
 			country_code = EXCLUDED.country_code,
+			tags = EXCLUDED.tags,
 			synced_at = EXCLUDED.synced_at
 	`
+	tags := node.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	// pgx's stdlib driver encodes []string as text[] natively; the plain
+	// database/sql *sql.DB handle here is backed by that same driver, so no
+	// special array wrapper is needed.
 	_, err := s.db.ExecContext(ctx, query,
 		node.UUID, node.Name, node.Address, node.Port,
 		boolToInt(node.IsConnected), boolToInt(node.IsDisabled), boolToInt(node.IsTrafficTrack),
 		node.TrafficTotal, node.TrafficUsed, node.UsersOnline,
-		node.CountryCode, node.SyncedAt,
+		node.CountryCode, tags, node.SyncedAt,
+	)
+	return err
+}
+
+// UpdateRemnaNodeLive writes just the fast-changing telemetry columns for
+// an already-synced node (throughput, xray uptime, live online count and
+// connection state). Called every ~1s by SyncService.syncLive — a plain
+// UPDATE rather than the UPSERT that UpsertRemnaNode uses, since a node
+// with live telemetry must already have a row from the full sync; if it
+// doesn't yet (e.g. right after the panel added it), this is a harmless
+// no-op until the next full sync creates the row.
+func (s *Storage) UpdateRemnaNodeLive(ctx context.Context, live *remnawave.RemnaNodeLiveData) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE remna_nodes SET
+			is_connected = $1,
+			users_online = $2,
+			xray_uptime_seconds = $3,
+			rx_bytes_per_sec = $4,
+			tx_bytes_per_sec = $5
+		WHERE uuid = $6
+	`,
+		boolToInt(live.IsConnected), live.UsersOnline, live.XrayUptime,
+		live.RxBytesPerSec, live.TxBytesPerSec, live.UUID,
 	)
 	return err
 }

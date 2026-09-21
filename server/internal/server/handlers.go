@@ -109,12 +109,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark connected nodes
-	s.clientsMu.RLock()
-	for _, n := range nodes {
-		_, n.IsConnected = s.clients[n.NodeID]
-	}
-	s.clientsMu.RUnlock()
+	s.markNodesConnected(nodes)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(nodes)
@@ -363,17 +358,24 @@ func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.clientsMu.RLock()
-	_, isConnected := s.clients[nodeID]
-	s.clientsMu.RUnlock()
-	if isConnected {
-		http.Error(w, "cannot delete connected node", http.StatusBadRequest)
-		return
-	}
-
 	if err := s.storage.DeleteNode(r.Context(), nodeID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Force-close a currently-open connection for this node, if any. Delete
+	// used to just refuse when the node was connected, which is why "delete"
+	// looked like it did nothing for a node whose agent was still running —
+	// the node stayed live and kept shipping batches. DeleteNode above has
+	// already wiped its data and tombstoned the node_id, so closing here is
+	// what makes it actually disappear instead of reappearing on the next
+	// batch; a reconnect attempt afterwards is refused by the WS handshake's
+	// tombstone check (see NodeIsDeleted in websocket.go).
+	s.clientsMu.RLock()
+	existing, isConnected := s.clients[nodeID]
+	s.clientsMu.RUnlock()
+	if isConnected {
+		existing.Conn.Close()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1916,4 +1918,22 @@ func (s *Server) handleOnlineHistory(w http.ResponseWriter, r *http.Request) {
 		"count":  len(points),
 		"points": points,
 	})
+}
+
+// markNodesConnected sets IsConnected and, for currently-connected agents,
+// AgentUptimeSeconds (time since the live WebSocket session was
+// established). Shared by the REST /api/nodes handler and both dashboard
+// WebSocket push paths so "is this agent actually up" is computed exactly
+// one way.
+func (s *Server) markNodesConnected(nodes []*models.NodeStats) {
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+	for _, n := range nodes {
+		client, ok := s.clients[n.NodeID]
+		n.IsConnected = ok
+		if ok {
+			uptime := int64(time.Since(client.ConnectedAt).Seconds())
+			n.AgentUptimeSeconds = &uptime
+		}
+	}
 }

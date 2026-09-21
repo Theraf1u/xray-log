@@ -5,7 +5,6 @@ import { authFetch } from "@/contexts/auth-context";
 import { useWsNodes } from "@/contexts/websocket-context";
 import { NodesTable } from "@/components/nodes/nodes-table";
 import { AddNodeDialog } from "@/components/nodes/add-node-dialog";
-import { Glass } from "@/components/ui/glass";
 import { StatRail } from "@/components/ui/stat-rail";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslations } from "next-intl";
@@ -94,32 +93,8 @@ export default function NodesPage() {
         ]}
       />
 
-      {onlineNodes.length > 0 && (
-        <Glass className="overflow-hidden">
-          <div className="px-5 pt-4">
-            <h3 className="text-sm font-semibold text-green-500">{t("onlineNodes")}</h3>
-            <p className="text-xs text-muted-foreground">{t("onlineNodesDesc")}</p>
-          </div>
-          <div className="p-5 pt-3">
-            <NodesTable nodes={onlineNodes} />
-          </div>
-        </Glass>
-      )}
-
-      {offlineNodes.length > 0 && (
-        <Glass className="overflow-hidden">
-          <div className="px-5 pt-4">
-            <h3 className="text-sm font-semibold text-muted-foreground">{t("offlineNodes")}</h3>
-            <p className="text-xs text-muted-foreground">{t("offlineNodesDesc")}</p>
-          </div>
-          <div className="p-5 pt-3">
-            <NodesTable
-              nodes={offlineNodes}
-              showActions
-              onDelete={setDeleteTarget}
-            />
-          </div>
-        </Glass>
+      {nodes.length > 0 && (
+        <NodesTable nodes={nodes} showActions onDelete={setDeleteTarget} />
       )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

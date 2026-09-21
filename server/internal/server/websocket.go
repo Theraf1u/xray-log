@@ -87,6 +87,22 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Refuse a node_id that was explicitly deleted via the UI. Without this,
+	// an agent still running on the box just reconnects with the same
+	// node_id and its next batch resurrects the "deleted" node within
+	// seconds (UpdateNodeStats upserts). Re-adding the node_id through any
+	// of the three add-node flows clears the tombstone (see
+	// Storage.ClearNodeTombstone), so this only blocks genuinely deleted,
+	// never-re-added nodes.
+	if deleted, err := s.storage.NodeIsDeleted(r.Context(), handshake.NodeID); err != nil {
+		log.Printf("server: tombstone check failed for %s: %v", handshake.NodeID, err)
+	} else if deleted {
+		log.Printf("server: rejected WS handshake for deleted node_id %s", handshake.NodeID)
+		conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "node was deleted — re-add it via the panel"))
+		conn.Close()
+		return
+	}
+
 	// Reset deadline
 	conn.SetReadDeadline(time.Time{})
 
@@ -94,6 +110,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		NodeID:      handshake.NodeID,
 		Conn:        conn,
 		ConnectedAt: time.Now(),
+	}
+
+	// Best-effort: record the agent's real source IP (proxy-aware via
+	// clientIP) for the manual Remnawave node-linking picker, which matches
+	// by IP rather than by name. Never blocks or fails the connection.
+	if ip := clientIP(r); ip != "" {
+		go func() {
+			if err := s.storage.UpdateNodeConnectIP(context.Background(), handshake.NodeID, ip); err != nil {
+				log.Printf("server: failed to record connect IP for node %s: %v", handshake.NodeID, err)
+			}
+		}()
 	}
 
 	s.clientsMu.Lock()
@@ -288,14 +315,7 @@ func (s *Server) sendFullDashboardData(client *DashboardClient) {
 
 	// Nodes
 	if nodes, err := s.storage.GetNodeStats(ctx); err == nil {
-		connectedNodes := s.GetConnectedClients()
-		connectedMap := make(map[string]bool)
-		for _, n := range connectedNodes {
-			connectedMap[n] = true
-		}
-		for _, n := range nodes {
-			n.IsConnected = connectedMap[n.NodeID]
-		}
+		s.markNodesConnected(nodes)
 		client.mu.Lock()
 		client.Conn.WriteJSON(&DashboardUpdate{Type: "nodes", Data: nodes})
 		client.mu.Unlock()
@@ -422,14 +442,7 @@ func (s *Server) broadcastToDashboards() {
 
 	// Nodes
 	if nodes, err := s.storage.GetNodeStats(ctx); err == nil {
-		connectedNodes := s.GetConnectedClients()
-		connectedMap := make(map[string]bool)
-		for _, n := range connectedNodes {
-			connectedMap[n] = true
-		}
-		for _, n := range nodes {
-			n.IsConnected = connectedMap[n.NodeID]
-		}
+		s.markNodesConnected(nodes)
 		updates = append(updates, DashboardUpdate{Type: "nodes", Data: nodes})
 	}
 

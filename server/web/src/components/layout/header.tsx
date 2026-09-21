@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
-import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network, Route, FileClock, Database, Sparkles, Settings } from "lucide-react";
+import { Activity, ShieldAlert, LogOut, Menu, X, Smartphone, Network, Route, FileClock, Database, Sparkles, Settings, HardDrive, HardDriveDownload, Clock, Users } from "lucide-react";
 import { ServiceStatusTiles } from "@/components/layout/service-status-tiles";
 import { useAiChatVisibility } from "@/lib/ai-chat-visibility";
 import { authFetch, useAuth } from "@/contexts/auth-context";
+import { useWsStats } from "@/contexts/websocket-context";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -28,7 +29,10 @@ export function Header() {
     disk_total_bytes: number;
     disk_free_bytes: number;
     percent: number;
+    disk_used_percent: number;
+    uptime_seconds: number;
   } | null>(null);
+  const { stats: dashboardStats } = useWsStats();
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -53,7 +57,7 @@ export function Header() {
     };
   }, [isAuthenticated]);
 
-  const formatBytes = (bytes: number) => {
+  const formatBytes = (bytes: number, fractionDigits?: number) => {
     const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
     let value = Math.max(0, bytes);
     let unit = 0;
@@ -61,8 +65,23 @@ export function Header() {
       value /= 1000;
       unit++;
     }
-    return `${value.toLocaleString("ru-RU", { maximumFractionDigits: unit >= 3 ? 2 : 1 })} ${units[unit]}`;
+    const digits = fractionDigits ?? (unit >= 3 ? 2 : 1);
+    return `${value.toLocaleString("ru-RU", { maximumFractionDigits: digits, minimumFractionDigits: digits })} ${units[unit]}`;
   };
+
+  const formatUptime = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    const remHours = hours % 24;
+    return remHours > 0 ? `${days}d ${remHours}h` : `${days}d`;
+  };
+
+  const diskPercentColor = (pct: number) =>
+    pct >= 90 ? "text-red-500" : pct >= 70 ? "text-yellow-500" : "text-green-500";
 
   const navItems = [
     { href: "/dashboard", label: t("dashboard") },
@@ -99,21 +118,97 @@ export function Header() {
             <ServiceStatusTiles />
             {storage && (
               <span
-                className="ml-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                className={cn(
+                  "ml-1 flex items-center gap-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums",
+                  diskPercentColor(storage.disk_used_percent)
+                )}
                 style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
-                title={`Analyzer: ${formatBytes(storage.analyzer_bytes)}; PostgreSQL: ${formatBytes(storage.database_bytes)}; WAL: ${formatBytes(storage.wal_bytes)}`}
+                title={t("diskUsedTooltip", {
+                  percent: storage.disk_used_percent.toLocaleString("ru-RU", { maximumFractionDigits: 1 }),
+                  analyzer: formatBytes(storage.analyzer_bytes),
+                  db: formatBytes(storage.database_bytes),
+                  wal: formatBytes(storage.wal_bytes),
+                  free: formatBytes(storage.disk_free_bytes),
+                })}
               >
-                {formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)}
+                <HardDrive className="h-3.5 w-3.5" />
+                {storage.disk_used_percent.toLocaleString("ru-RU", { maximumFractionDigits: 0 })}%
               </span>
             )}
+            {storage && (
+              <span
+                className="flex items-center gap-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+                title={t("dbSizeTooltip")}
+              >
+                <Database className="h-3.5 w-3.5" />
+                {formatBytes(storage.database_bytes, 1)}
+              </span>
+            )}
+            {storage && (
+              <span
+                className="flex items-center gap-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+                title={t("diskFreeTooltip")}
+              >
+                <HardDriveDownload className="h-3.5 w-3.5" />
+                {formatBytes(storage.disk_free_bytes, 1)}
+              </span>
+            )}
+            {storage && (
+              <span
+                className="flex items-center gap-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+                style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+                title={t("uptimeTooltip")}
+              >
+                <Clock className="h-3.5 w-3.5" />
+                {formatUptime(storage.uptime_seconds)}
+              </span>
+            )}
+            <span
+              className="flex items-center gap-1 border-l pl-2.5 pr-1.5 text-xs font-medium tabular-nums text-muted-foreground"
+              style={{ borderColor: "rgb(var(--glass-hairline) / var(--glass-hairline-opacity))" }}
+              title={t("onlineUsersTooltip")}
+            >
+              <Users className="h-3.5 w-3.5" />
+              {dashboardStats.online_users.toLocaleString("ru-RU")}
+            </span>
           </div>
           {storage && (
             <span
-              className="hidden sm:inline-flex xl:hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground"
-              title={`Analyzer: ${formatBytes(storage.analyzer_bytes)}; PostgreSQL: ${formatBytes(storage.database_bytes)}; хронология: ${formatBytes(storage.chronology_bytes)}; WAL: ${formatBytes(storage.wal_bytes)}; свободно на диске: ${formatBytes(storage.disk_free_bytes)}`}
+              className={cn(
+                "hidden sm:inline-flex xl:hidden items-center gap-2 whitespace-nowrap rounded-full bg-muted/50 px-2.5 py-1 text-xs font-medium text-muted-foreground"
+              )}
+              title={t("diskUsedTooltipFull", {
+                percent: storage.disk_used_percent.toLocaleString("ru-RU", { maximumFractionDigits: 1 }),
+                analyzer: formatBytes(storage.analyzer_bytes),
+                db: formatBytes(storage.database_bytes),
+                chronology: formatBytes(storage.chronology_bytes),
+                wal: formatBytes(storage.wal_bytes),
+                free: formatBytes(storage.disk_free_bytes),
+                uptime: formatUptime(storage.uptime_seconds),
+              })}
             >
-              <Database className="h-3.5 w-3.5 text-primary" />
-              {formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)} / {storage.percent.toLocaleString("ru-RU", { maximumFractionDigits: 3 })}%
+              <span className={cn("flex items-center gap-1", diskPercentColor(storage.disk_used_percent))}>
+                <HardDrive className="h-3.5 w-3.5" />
+                {storage.disk_used_percent.toLocaleString("ru-RU", { maximumFractionDigits: 0 })}%
+              </span>
+              <span className="flex items-center gap-1">
+                <Database className="h-3.5 w-3.5" />
+                {formatBytes(storage.database_bytes, 1)}
+              </span>
+              <span className="flex items-center gap-1">
+                <HardDriveDownload className="h-3.5 w-3.5" />
+                {formatBytes(storage.disk_free_bytes, 1)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {formatUptime(storage.uptime_seconds)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" />
+                {dashboardStats.online_users.toLocaleString("ru-RU")}
+              </span>
             </span>
           )}
           <LanguageSwitcher />
@@ -199,9 +294,27 @@ export function Header() {
             ))}
             <ServiceStatusTiles className="flex-wrap" />
             {storage && (
-              <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                <Database className="h-4 w-4 text-primary" />
-                <span>{formatBytes(storage.analyzer_bytes)} / {formatBytes(storage.disk_total_bytes)} / {storage.percent.toLocaleString("ru-RU", { maximumFractionDigits: 3 })}%</span>
+              <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                <span className={cn("flex items-center gap-1", diskPercentColor(storage.disk_used_percent))}>
+                  <HardDrive className="h-4 w-4" />
+                  {storage.disk_used_percent.toLocaleString("ru-RU", { maximumFractionDigits: 0 })}%
+                </span>
+                <span className="flex items-center gap-1">
+                  <Database className="h-4 w-4" />
+                  {formatBytes(storage.database_bytes, 1)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <HardDriveDownload className="h-4 w-4" />
+                  {formatBytes(storage.disk_free_bytes, 1)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-4 w-4" />
+                  {formatUptime(storage.uptime_seconds)}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Users className="h-4 w-4" />
+                  {dashboardStats.online_users.toLocaleString("ru-RU")}
+                </span>
               </div>
             )}
             <div className="pt-2 border-t">

@@ -166,28 +166,81 @@ type HourlyStatEntry struct {
 	RequestCount int       `json:"requestCount"`
 }
 
+// NodeVersions holds the running xray-core and node-agent version strings.
+// Confirmed against this panel's live OpenAPI schema — these are nested
+// under "versions", not top-level "xrayVersion"/"nodeVersion" fields (an
+// earlier version of this struct guessed the top-level names and they
+// never matched, so XrayVersion/NodeVersion were always nil in practice).
+type NodeVersions struct {
+	Xray string `json:"xray"`
+	Node string `json:"node"`
+}
+
+// NodeSystemInterfaceStats is live network throughput for the node's main
+// interface, refreshed by the node agent roughly every second.
+type NodeSystemInterfaceStats struct {
+	Interface     string  `json:"interface"`
+	RxBytesPerSec float64 `json:"rxBytesPerSec"`
+	TxBytesPerSec float64 `json:"txBytesPerSec"`
+	RxTotal       float64 `json:"rxTotal"`
+	TxTotal       float64 `json:"txTotal"`
+}
+
+// NodeSystemStats is the live half of Node.System — refreshed continuously
+// by the node agent, unlike the rest of Node which only changes on config
+// edits or reconnects.
+type NodeSystemStats struct {
+	MemoryFree float64                   `json:"memoryFree"`
+	MemoryUsed float64                   `json:"memoryUsed"`
+	Uptime     float64                   `json:"uptime"`
+	LoadAvg    []float64                 `json:"loadAvg"`
+	Interface  *NodeSystemInterfaceStats `json:"interface"`
+}
+
+// NodeSystemInfo is static host info — cpu count/model, hostname, OS —
+// reported once and only changing if the underlying VPS itself changes.
+type NodeSystemInfo struct {
+	Arch              string   `json:"arch"`
+	CPUs              int      `json:"cpus"`
+	CPUModel          string   `json:"cpuModel"`
+	MemoryTotal       float64  `json:"memoryTotal"`
+	Hostname          string   `json:"hostname"`
+	Platform          string   `json:"platform"`
+	Release           string   `json:"release"`
+	Type              string   `json:"type"`
+	Version           string   `json:"version"`
+	NetworkInterfaces []string `json:"networkInterfaces"`
+}
+
+// NodeSystem is the node agent's host telemetry, nil until the agent has
+// reported at least once.
+type NodeSystem struct {
+	Info  NodeSystemInfo  `json:"info"`
+	Stats NodeSystemStats `json:"stats"`
+}
+
 // Node represents a Remnawave node
 type Node struct {
-	UUID              string     `json:"uuid"`
-	Name              string     `json:"name"`
-	Address           string     `json:"address"`
-	Port              *int       `json:"port"`
-	CountryCode       string     `json:"countryCode"`
-	IsDisabled        bool       `json:"isDisabled"`
-	IsConnected       bool       `json:"isConnected"`
-	IsConnecting      bool       `json:"isConnecting"`
-	TrafficUsedBytes  *int64     `json:"trafficUsedBytes"`
-	TrafficLimitBytes *int64     `json:"trafficLimitBytes"`
-	UsersOnline       *int       `json:"usersOnline"`
-	XrayVersion       *string    `json:"xrayVersion"`
-	NodeVersion       *string    `json:"nodeVersion"`
-	XrayUptime        any        `json:"xrayUptime"`
-	LastStatusChange  *time.Time `json:"lastStatusChange"`
-	LastStatusMessage *string    `json:"lastStatusMessage"`
-	ViewPosition      int        `json:"viewPosition"`
-	Tags              []string   `json:"tags"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
+	UUID              string      `json:"uuid"`
+	Name              string      `json:"name"`
+	Address           string      `json:"address"`
+	Port              *int        `json:"port"`
+	CountryCode       string      `json:"countryCode"`
+	IsDisabled        bool        `json:"isDisabled"`
+	IsConnected       bool        `json:"isConnected"`
+	IsConnecting      bool        `json:"isConnecting"`
+	TrafficUsedBytes  *int64      `json:"trafficUsedBytes"`
+	TrafficLimitBytes *int64      `json:"trafficLimitBytes"`
+	UsersOnline       *int        `json:"usersOnline"`
+	Versions          *NodeVersions `json:"versions"`
+	System            *NodeSystem `json:"system"`
+	XrayUptime        float64     `json:"xrayUptime"`
+	LastStatusChange  *time.Time  `json:"lastStatusChange"`
+	LastStatusMessage *string     `json:"lastStatusMessage"`
+	ViewPosition      int         `json:"viewPosition"`
+	Tags              []string    `json:"tags"`
+	CreatedAt         time.Time   `json:"createdAt"`
+	UpdatedAt         time.Time   `json:"updatedAt"`
 }
 
 // IsEnabled returns true if node is enabled (inverse of IsDisabled)

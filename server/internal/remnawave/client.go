@@ -106,3 +106,4 @@ func parseResponse[T any](data []byte) (T, error) {
 	}
 	return wrapper.Response, nil
 }
+

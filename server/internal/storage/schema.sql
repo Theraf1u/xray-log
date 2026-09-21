@@ -713,6 +713,17 @@ CREATE TABLE IF NOT EXISTS node_remna_map (
 
 CREATE INDEX IF NOT EXISTS idx_node_remna_map_uuid ON node_remna_map(remna_uuid);
 
+-- Tombstone for node_ids removed via "Delete node" in the UI. Deleting only
+-- wipes node_stats/node_remna_map rows; a still-running agent reconnects on
+-- its own and UpdateNodeStats's upsert would otherwise resurrect the node
+-- within seconds. The WS handshake (handleWebSocket) refuses any node_id
+-- listed here, so a deleted node actually stays gone. Re-running one of the
+-- three add-node flows for the same node_id removes the tombstone again.
+CREATE TABLE IF NOT EXISTS deleted_node_ids (
+    node_id    text PRIMARY KEY,
+    deleted_at timestamptz DEFAULT now() NOT NULL
+);
+
 -- =============================================================================
 -- Online snapshots (1/min cron)
 -- =============================================================================
