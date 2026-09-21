@@ -16,7 +16,7 @@ import { Globe, Wifi } from "lucide-react";
 import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { UserIPHistory } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
-import { IPInfoBadge } from "@/components/ui/ip-info-badge";
+import { useIPInfo } from "@/components/ui/ip-info-badge";
 import { useTranslations } from "next-intl";
 
 // Country flag emoji from country code
@@ -96,55 +96,66 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
         </TableHeader>
         <TableBody>
           {history.map((ip, index) => (
-            <TableRow key={`${ip.ip_address}-${index}`}>
-              <TableCell>
-                {ip.country_code ? (
-                  // Use pre-fetched geo data from backend
-                  <span className="inline-flex items-center gap-1.5 font-mono text-sm">
-                    <span className="font-flag">{getFlagEmoji(ip.country_code)}</span>
-                    <span>{ip.ip_address}</span>
-                  </span>
-                ) : (
-                  // Fallback to IPInfoBadge for IPs without geo data
-                  <IPInfoBadge ip={ip.ip_address} />
-                )}
-              </TableCell>
-              <TableCell className="hidden sm:table-cell">
-                {ip.country_code ? (
-                  <div className="flex items-center gap-1 text-sm">
-                    <span>{ip.country_name || ip.country_code}</span>
-                    {ip.city && (
-                      <span className="text-muted-foreground">• {ip.city}</span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground text-sm">—</span>
-                )}
-              </TableCell>
-              <TableCell className="hidden md:table-cell">
-                {ip.node_id ? (
-                  <Badge variant="outline" className="text-xs">{ip.node_id}</Badge>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="text-right">
-                <Badge variant="secondary">{ip.request_count.toLocaleString()}</Badge>
-              </TableCell>
-              <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
-                {isValidDate(ip.first_seen)
-                  ? formatDistanceToNowRu(new Date(ip.first_seen))
-                  : "—"}
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
-                {isValidDate(ip.last_seen)
-                  ? formatDistanceToNowRu(new Date(ip.last_seen))
-                  : "—"}
-              </TableCell>
-            </TableRow>
+            <HistoryRow key={`${ip.ip_address}-${index}`} ip={ip} />
           ))}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+// One row's IP address, geo lookup and everything else. A single
+// useIPInfo() call here is shared by both the IP-address cell (always the
+// literal address, never replaced by the city - IPInfoBadge's compact mode
+// does that on purpose for space-constrained columns, which is wrong here)
+// and the Location cell, instead of each cell re-fetching or duplicating
+// IPInfoBadge's own internal fetch.
+function HistoryRow({ ip }: { ip: UserIPHistory }) {
+  const { info, loading } = useIPInfo(ip.ip_address);
+  const flag = info?.country_code ? getFlagEmoji(info.country_code) : "";
+
+  return (
+    <TableRow>
+      <TableCell>
+        <span className="inline-flex items-center gap-1.5 font-mono text-sm">
+          {flag && <span className="font-flag">{flag}</span>}
+          <span>{ip.ip_address}</span>
+        </span>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell">
+        {loading ? (
+          <span className="text-muted-foreground text-sm">...</span>
+        ) : info && info.country !== "Private" ? (
+          <div className="flex items-center gap-1 text-sm">
+            <span>{info.city || info.country}</span>
+            {info.city && info.country && (
+              <span className="text-muted-foreground">- {info.country}</span>
+            )}
+          </div>
+        ) : (
+          <span className="text-muted-foreground text-sm">—</span>
+        )}
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        {ip.node_id ? (
+          <Badge variant="outline" className="text-xs">{ip.node_id}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <Badge variant="secondary">{ip.request_count.toLocaleString()}</Badge>
+      </TableCell>
+      <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
+        {isValidDate(ip.first_seen)
+          ? formatDistanceToNowRu(new Date(ip.first_seen))
+          : "—"}
+      </TableCell>
+      <TableCell className="text-muted-foreground text-sm whitespace-nowrap">
+        {isValidDate(ip.last_seen)
+          ? formatDistanceToNowRu(new Date(ip.last_seen))
+          : "—"}
+      </TableCell>
+    </TableRow>
   );
 }

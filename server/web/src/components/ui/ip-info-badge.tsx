@@ -18,8 +18,11 @@ interface IPInfoBadgeProps {
 // Cache for IP info to avoid repeated API calls
 const ipInfoCache = new Map<string, IPInfo>();
 
-export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProps) {
-  const t = useTranslations("ipInfo");
+// Shared fetch+cache logic behind IPInfoBadge, exported so call sites that
+// need the raw geo fields (e.g. rendering the IP address and the city in
+// two separate table columns) don't have to duplicate the fetch or re-parse
+// IPInfoBadge's own rendered output.
+export function useIPInfo(ip: string): { info: IPInfo | null; loading: boolean } {
   const [info, setInfo] = useState<IPInfo | null>(ipInfoCache.get(ip) || null);
   const [loading, setLoading] = useState(!ipInfoCache.has(ip));
 
@@ -30,23 +33,34 @@ export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProp
       return;
     }
 
+    let cancelled = false;
     const fetchInfo = async () => {
       try {
         const res = await authFetch(`/api/ipinfo?ip=${encodeURIComponent(ip)}`);
         if (res.ok) {
           const data: IPInfo = await res.json();
           ipInfoCache.set(ip, data);
-          setInfo(data);
+          if (!cancelled) setInfo(data);
         }
       } catch {
         // Ignore errors
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchInfo();
+    return () => {
+      cancelled = true;
+    };
   }, [ip]);
+
+  return { info, loading };
+}
+
+export function IPInfoBadge({ ip, showFull = false, className }: IPInfoBadgeProps) {
+  const t = useTranslations("ipInfo");
+  const { info, loading } = useIPInfo(ip);
 
   if (loading) {
     return <Skeleton className="h-5 w-20" />;
