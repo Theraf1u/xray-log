@@ -558,9 +558,16 @@ func (s *Storage) NodeIDForRemnaUUID(ctx context.Context, remnaUUID string) (str
 // could silently steal an ID some other already-connected agent is using.
 func (s *Storage) NodeIDTaken(ctx context.Context, nodeID string) (bool, error) {
 	var taken bool
+	// A tombstoned node_id (deleted_node_ids) does NOT count as taken: it is
+	// exactly the id a re-add flow should be free to reuse, and ClearNodeTombstone
+	// runs as part of LinkNodeRemna right after. Without this exclusion, a
+	// deleted node could never be re-added under its original name from the
+	// panel picker — slugifyNodeID would mint a "-2" suffix forever, while
+	// the already-installed agent keeps using the original, now-orphaned id.
 	err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(SELECT 1 FROM node_remna_map WHERE node_id = $1)
-		    OR EXISTS(SELECT 1 FROM nodes WHERE node_id = $1)
+		SELECT (EXISTS(SELECT 1 FROM node_remna_map WHERE node_id = $1)
+		    OR EXISTS(SELECT 1 FROM nodes WHERE node_id = $1))
+		    AND NOT EXISTS(SELECT 1 FROM deleted_node_ids WHERE node_id = $1)
 	`, nodeID).Scan(&taken)
 	return taken, err
 }
