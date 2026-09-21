@@ -60,6 +60,7 @@ type Server struct {
 	dashboardClients   map[*DashboardClient]bool
 	dashboardClientsMu sync.RWMutex
 	broadcastChan      chan *DashboardUpdate
+	startTime time.Time // set once in New(); used for uptime reporting
 }
 
 // DashboardClient wraps websocket connection with mutex for thread-safe writes
@@ -108,6 +109,7 @@ func New(addr string, allowedOrigins []string, apiToken, agentToken string, anal
 		// load). AI: strict — each call drives a paid LLM request.
 		apiLimiter: newRateLimiter(20, 40),
 		aiLimiter:  newRateLimiter(0.2, 5),
+		startTime:  time.Now(),
 	}
 	return s
 }
@@ -294,6 +296,18 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/services/health", s.requireAPIToken(s.handleServicesHealth))
 	mux.HandleFunc("/api/admin/settings", s.requireAPIToken(s.handleAdminSettings))
 	mux.HandleFunc("/api/nodes/install-command", s.requireAPIToken(s.handleNodeInstallCommand))
+	mux.HandleFunc("/api/nodes/create-from-panel", s.requireAPIToken(s.handleCreateNodeFromPanel))
+	// Pairing: request/status are unauthenticated by design (see handlePairRequest) —
+	// a fresh node has no token yet. pending/approve require the admin API token.
+	mux.HandleFunc("/api/nodes/pair/request", s.handlePairRequest)
+	mux.HandleFunc("/api/nodes/pair/status", s.handlePairStatus)
+	mux.HandleFunc("/api/nodes/pair/pending", s.requireAPIToken(s.handlePairPending))
+	mux.HandleFunc("/api/nodes/pair/approve", s.requireAPIToken(s.handlePairApprove))
+	mux.HandleFunc("/api/install/", s.handleInstallScript)
+	mux.HandleFunc("/api/remnawave/nodes/list", s.requireAPIToken(s.handleRemnaNodesList))
+	mux.HandleFunc("/api/nodes/live", s.requireAPIToken(s.handleNodesLive))
+	mux.HandleFunc("/api/nodes/link-remnawave", s.requireAPIToken(s.handleLinkNodeRemna))
+	mux.HandleFunc("/api/nodes/unlink-remnawave", s.requireAPIToken(s.handleUnlinkNodeRemna))
 	mux.HandleFunc("/api/remnawave/stats", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveStats)))
 	mux.HandleFunc("/api/remnawave/users", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUsers)))
 	mux.HandleFunc("/api/remnawave/user/", s.requireAPIToken(s.cached(60*time.Second, s.handleRemnawaveUser)))

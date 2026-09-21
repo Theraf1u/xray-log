@@ -85,7 +85,13 @@
     "logout": "Logout",
     "appName": "Lounge XRAY Logs",
     "appNameFull": "Lounge XRAY Logs panel",
-    "admin": "Admin"
+    "admin": "Admin",
+    "diskUsedTooltip": "Disk used: {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; WAL: {wal}; free: {free}",
+    "diskUsedTooltipFull": "Disk used: {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; chronology: {chronology}; WAL: {wal}; free: {free}; uptime: {uptime}",
+    "dbSizeTooltip": "PostgreSQL database size",
+    "diskFreeTooltip": "Free disk space",
+    "uptimeTooltip": "Server uptime",
+    "onlineUsersTooltip": "Users online"
   },
   "login": {
     "title": "Lounge XRAY Logs",
@@ -330,7 +336,17 @@
     "lastSeen": "Last Seen",
     "statusOnline": "Online",
     "statusOffline": "Offline",
-    "never": "Never"
+    "never": "Never",
+    "address": "Address",
+    "notInPanel": "not in panel",
+    "disabledInPanel": "disabled in panel",
+    "unlink": "Unlink",
+    "linkToPanel": "Link",
+    "uptime": "connection uptime",
+    "copyAddress": "Copy address",
+    "traffic": "traffic (panel)",
+    "requestsShort": "req.",
+    "delete": "Delete"
   },
   "blacklist": {
     "title": "Blacklist Analytics",
@@ -1143,8 +1159,8 @@
   },
   "addNode": {
     "trigger": "Add node",
-    "title": "Add a node",
-    "description": "Generate the agent install command and run it on the new VPN node over SSH",
+    "title": "Pick a panel node",
+    "description": "Click the Remnawave node this new server physically is — it links immediately, and an install command appears",
     "nodeIdLabel": "Node name",
     "nodeIdHint": "Latin letters, digits and hyphens, 3–50 characters. Becomes NODE_ID in the agent config",
     "generate": "Generate",
@@ -1155,6 +1171,42 @@
     "copied": "Copied",
     "runHint": "Run this command on the node’s server over SSH (as root). Install is idempotent — safe to re-run",
     "waitingForConnection": "Waiting for connection...",
-    "connected": "Node \"{node}\" connected!"
+    "connected": "Node \"{node}\" connected!",
+    "titleResult": "Installing \"{node}\"",
+    "searchPlaceholder": "Search by name, address, country...",
+    "filter_enabled": "Enabled",
+    "filter_disabled": "Disabled",
+    "filter_all": "All",
+    "noResults": "No results",
+    "disabledInPanel": "disabled in panel",
+    "alreadyAdded": "already added as \"{node}\"",
+    "pickAnother": "Pick another node",
+    "filter_enabled_unlinked": "Enabled",
+    "filter_disabled_unlinked": "Disabled",
+    "filter_all_unlinked": "Not linked",
+    "filter_linked": "Linked",
+    "pendingCodesTitle": "Got a code from a node? Pick it, then a panel node:",
+    "approvingCode": "Approving code {code} — pick a panel node below",
+    "titlePaired": "Confirmed: \"{node}\"",
+    "pairedHint": "The node's agent will pick this up automatically on its next poll",
+    "pairedConfirmed": "Node \"{node}\" confirmed — the agent will connect on its own, no further commands needed"
+  },
+  "linkNode": {
+    "title": "Link \"{node}\" to a panel node",
+    "description": "Pick the Remnawave node this agent physically is. Linking is manual and permanent — nothing connects automatically.",
+    "searchPlaceholder": "Search by name, address, country...",
+    "noResults": "No results",
+    "disabledInPanel": "disabled in panel",
+    "linkedToOther": "already linked to {node}",
+    "genericError": "Request failed",
+    "filter_enabled": "Enabled",
+    "filter_disabled": "Disabled",
+    "filter_all": "All",
+    "panelOnline": "In panel: online",
+    "panelOffline": "In panel: offline",
+    "unlimited": "unlimited",
+    "agentConnected": "agent {node} connected",
+    "agentNotResponding": "agent {node} not responding",
+    "noAgentLinked": "no agent linked"
   }
 }

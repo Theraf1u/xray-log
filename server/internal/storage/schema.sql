@@ -35,12 +35,20 @@ CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS nodes (
-    id          smallint     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    node_id     text         NOT NULL UNIQUE,
-    role        text         NOT NULL CHECK (role IN ('bridge', 'exit')),
-    first_seen  timestamptz  NOT NULL DEFAULT now(),
-    last_seen   timestamptz  NOT NULL DEFAULT now()
+    id               smallint     GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    node_id          text         NOT NULL UNIQUE,
+    role             text         NOT NULL CHECK (role IN ('bridge', 'exit')),
+    first_seen       timestamptz  NOT NULL DEFAULT now(),
+    last_seen        timestamptz  NOT NULL DEFAULT now()
 );
+
+-- Real source IP of the agent's last WebSocket handshake (via the shared
+-- clientIP() helper, so it's proxy-aware). Used to match an agent's
+-- node_id to its Remnawave panel node by IP instead of by name, since
+-- names between the two systems follow no convention. Added after `nodes`
+-- already existed in production, hence the separate ALTER rather than a
+-- column in CREATE TABLE — that clause only fires for a brand-new table.
+ALTER TABLE nodes ADD COLUMN IF NOT EXISTS last_connect_ip inet;
 
 -- =============================================================================
 -- HOT TABLES — PARTITION BY RANGE (ts)
@@ -657,8 +665,53 @@ CREATE TABLE IF NOT EXISTS remna_nodes (
     synced_at        timestamptz DEFAULT now()
 );
 
+-- Same reasoning as nodes.last_connect_ip above: remna_nodes predates this
+-- column in production, so CREATE TABLE IF NOT EXISTS above never runs for
+-- it and the column needs its own idempotent ALTER.
+ALTER TABLE remna_nodes ADD COLUMN IF NOT EXISTS tags text[] DEFAULT '{}';
+
+-- Live telemetry (throughput, xray uptime) written every ~1s by
+-- SyncService.syncLive — see remnawave/sync.go. Separate from the columns
+-- above, which only change on the slower admin-configured full sync.
+ALTER TABLE remna_nodes ADD COLUMN IF NOT EXISTS xray_uptime_seconds double precision DEFAULT 0;
+ALTER TABLE remna_nodes ADD COLUMN IF NOT EXISTS rx_bytes_per_sec double precision DEFAULT 0;
+ALTER TABLE remna_nodes ADD COLUMN IF NOT EXISTS tx_bytes_per_sec double precision DEFAULT 0;
+
+-- Node pairing: a fresh node's install script can request a short code
+-- from the server *before* it has any credentials (unauthenticated —
+-- there's nothing to authenticate with yet), then poll for approval. The
+-- admin sees the pending code in the panel, picks which Remnawave node it
+-- physically is, and approving hands back the shared AGENT_TOKEN plus a
+-- node_id derived from that panel node — same linking logic as clicking
+-- "Add node" in the panel, just initiated from the node's own terminal
+-- instead. Short-lived by design (see PAIRING_TTL in the Go code); a code
+-- is only useful during that window, not a long-term secret.
+CREATE TABLE IF NOT EXISTS node_pairing_requests (
+    code        text PRIMARY KEY,
+    hint        text,
+    node_id     text,
+    approved    integer DEFAULT 0 NOT NULL,
+    created_at  timestamptz DEFAULT now() NOT NULL,
+    expires_at  timestamptz NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_pairing_expires ON node_pairing_requests(expires_at);
+
 CREATE INDEX IF NOT EXISTS idx_remna_nodes_connected ON remna_nodes(is_connected);
 CREATE INDEX IF NOT EXISTS idx_remna_nodes_country   ON remna_nodes(country_code);
+
+-- Manual, admin-approved link from an agent's node_id to a Remnawave panel
+-- node (by uuid, not name — names collide and get renamed; uuid doesn't).
+-- Deliberately never populated automatically: the panel has ~100 nodes,
+-- many stale/renamed/decommissioned, and blind name-matching would risk
+-- silently attaching an agent's traffic stats to the wrong panel entry.
+CREATE TABLE IF NOT EXISTS node_remna_map (
+    node_id    text PRIMARY KEY,
+    remna_uuid text NOT NULL REFERENCES remna_nodes(uuid) ON DELETE CASCADE,
+    linked_at  timestamptz DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_remna_map_uuid ON node_remna_map(remna_uuid);
 
 -- =============================================================================
 -- Online snapshots (1/min cron)

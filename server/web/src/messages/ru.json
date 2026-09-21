@@ -85,7 +85,13 @@
     "logout": "Выход",
     "appName": "Lounge XRAY Logs",
     "appNameFull": "Lounge XRAY Logs — панель",
-    "admin": "Админка"
+    "admin": "Админка",
+    "diskUsedTooltip": "Диск занят на {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; WAL: {wal}; свободно: {free}",
+    "diskUsedTooltipFull": "Диск занят на {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; хронология: {chronology}; WAL: {wal}; свободно: {free}; аптайм: {uptime}",
+    "dbSizeTooltip": "Размер базы данных PostgreSQL",
+    "diskFreeTooltip": "Свободно места на диске",
+    "uptimeTooltip": "Аптайм сервера",
+    "onlineUsersTooltip": "Пользователей онлайн"
   },
   "login": {
     "title": "Lounge XRAY Logs",
@@ -330,7 +336,17 @@
     "lastSeen": "Последняя активность",
     "statusOnline": "Онлайн",
     "statusOffline": "Офлайн",
-    "never": "Никогда"
+    "never": "Никогда",
+    "address": "Адрес",
+    "notInPanel": "нет в панели",
+    "disabledInPanel": "выкл. в панели",
+    "unlink": "Отвязать",
+    "linkToPanel": "Привязать",
+    "uptime": "аптайм подключения",
+    "copyAddress": "Скопировать адрес",
+    "traffic": "трафик (панель)",
+    "requestsShort": "запр.",
+    "delete": "Удалить"
   },
   "blacklist": {
     "title": "Аналитика блоклиста",
@@ -1143,8 +1159,8 @@
   },
   "addNode": {
     "trigger": "Добавить ноду",
-    "title": "Добавление ноды",
-    "description": "Сгенерируйте команду установки агента и выполните её на новой VPN-ноде по SSH",
+    "title": "Выберите ноду панели",
+    "description": "Кликните по ноде Remnawave, которой физически является новый сервер — она сразу привяжется, и появится команда установки",
     "nodeIdLabel": "Имя ноды",
     "nodeIdHint": "Латиница, цифры и дефис, 3–50 символов. Совпадает с NODE_ID в конфиге агента",
     "generate": "Создать",
@@ -1155,6 +1171,42 @@
     "copied": "Скопировано",
     "runHint": "Выполните эту команду на сервере ноды по SSH (от root). Установка идемпотентна — повторный запуск безопасен",
     "waitingForConnection": "Ожидание подключения...",
-    "connected": "Нода «{node}» подключена!"
+    "connected": "Нода «{node}» подключена!",
+    "titleResult": "Установка «{node}»",
+    "searchPlaceholder": "Поиск по имени, адресу, стране...",
+    "filter_enabled": "Включённые",
+    "filter_disabled": "Выключенные",
+    "filter_all": "Все",
+    "noResults": "Ничего не найдено",
+    "disabledInPanel": "выключена в панели",
+    "alreadyAdded": "уже добавлена как «{node}»",
+    "pickAnother": "Выбрать другую ноду",
+    "filter_enabled_unlinked": "Включённые",
+    "filter_disabled_unlinked": "Выключенные",
+    "filter_all_unlinked": "Не привязаны",
+    "filter_linked": "Привязаны",
+    "pendingCodesTitle": "Есть код с ноды? Выбери его, затем — ноду панели:",
+    "approvingCode": "Привязка кода {code} — выбери ноду панели ниже",
+    "titlePaired": "Подтверждено: «{node}»",
+    "pairedHint": "Агент на ноде подхватит эти данные автоматически при следующем опросе",
+    "pairedConfirmed": "Нода «{node}» подтверждена — агент подключится сам, без дополнительных команд"
+  },
+  "linkNode": {
+    "title": "Привязать «{node}» к ноде панели",
+    "description": "Выберите ноду Remnawave, которой физически является этот агент. Привязка ручная и навсегда — ничего не подключается автоматически.",
+    "searchPlaceholder": "Поиск по имени, адресу, стране...",
+    "noResults": "Ничего не найдено",
+    "disabledInPanel": "выключена в панели",
+    "linkedToOther": "уже привязана к {node}",
+    "genericError": "Не удалось выполнить запрос",
+    "filter_enabled": "Включённые",
+    "filter_disabled": "Выключенные",
+    "filter_all": "Все",
+    "panelOnline": "В панели: онлайн",
+    "panelOffline": "В панели: офлайн",
+    "unlimited": "безлимит",
+    "agentConnected": "агент {node} подключён",
+    "agentNotResponding": "агент {node} не отвечает",
+    "noAgentLinked": "агент не привязан"
   }
 }

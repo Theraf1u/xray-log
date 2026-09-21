@@ -80,6 +80,66 @@ prompt_if_unset() {
     fi
 }
 
+# ─── Pairing (no AUTH_TOKEN yet) ────────────────────────────────────────────
+#
+# Three ways to end up with NODE_ID/SERVER_URL/AUTH_TOKEN set: paste the
+# whole command the panel's "Добавить ноду" button generated (all three
+# already in the env, this block is skipped entirely) — or, if AUTH_TOKEN
+# is missing, request a short pairing code from the panel and wait for an
+# admin to approve it there. Pairing needs only the panel's own URL, never
+# a token, since a fresh node has no token yet to prove it's legitimate —
+# that's the admin's job, approving the code against a specific Remnawave
+# node in the panel.
+pairing_flow() {
+    prompt_if_unset PANEL_URL "PANEL_URL (https://analyzer.example.com — без токена)"
+    PANEL_URL="${PANEL_URL%/}"
+
+    local ip hint
+    ip="$(curl -s -4 -m 3 ifconfig.me 2>/dev/null)"
+    [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || ip="unknown"
+    hint="$(hostname) ($ip)"
+
+    log "Запрашиваю код привязки у $PANEL_URL ..."
+    local resp code
+    resp="$(curl -fsS -m 10 -X POST "$PANEL_URL/api/nodes/pair/request" \
+        -H "Content-Type: application/json" \
+        -d "{\"hint\":\"${hint}\"}")" || die "Не смог достучаться до $PANEL_URL — проверь адрес и что панель доступна отсюда"
+    code="$(echo "$resp" | grep -oP '"code"\s*:\s*"\K[^"]+')"
+    [[ -n "$code" ]] || die "Панель не вернула код: $resp"
+
+    cat <<MSG
+
+${BOLD}${YELLOW}════════════════════════════════════════════════════════════════════${RESET}
+  Код привязки: ${BOLD}${GREEN}${code}${RESET}
+${BOLD}${YELLOW}════════════════════════════════════════════════════════════════════${RESET}
+
+  Открой панель → ${BOLD}Ноды${RESET} → ${BOLD}Добавить ноду${RESET} → раздел «Есть код с ноды» →
+  введи ${BOLD}${code}${RESET} и выбери, какой нодой Remnawave физически является этот сервер.
+
+  Жду подтверждения (код живёт 15 минут)...
+
+MSG
+
+    local deadline=$(( $(date +%s) + 900 ))
+    while (( $(date +%s) < deadline )); do
+        resp="$(curl -fsS -m 10 "$PANEL_URL/api/nodes/pair/status?code=${code}" 2>/dev/null)" || true
+        if echo "$resp" | grep -q '"approved"\s*:\s*true'; then
+            NODE_ID="$(echo "$resp" | grep -oP '"node_id"\s*:\s*"\K[^"]+')"
+            SERVER_URL="$(echo "$resp" | grep -oP '"server_url"\s*:\s*"\K[^"]+')"
+            AUTH_TOKEN="$(echo "$resp" | grep -oP '"auth_token"\s*:\s*"\K[^"]+')"
+            [[ -n "$NODE_ID" && -n "$SERVER_URL" && -n "$AUTH_TOKEN" ]] || die "Панель подтвердила код, но не прислала параметры: $resp"
+            ok "Привязано к ноде «$NODE_ID» — продолжаю установку"
+            return
+        fi
+        sleep 5
+    done
+    die "Код не подтверждён за 15 минут — запусти установку заново"
+}
+
+if [[ -z "${AUTH_TOKEN:-}" ]]; then
+    pairing_flow
+fi
+
 prompt_if_unset NODE_ID    "NODE_ID (уникальный id ноды, e.g. germany-1)" "$(hostname)"
 prompt_if_unset SERVER_URL "SERVER_URL (wss://analyzer.example.com/ws)"
 prompt_if_unset AUTH_TOKEN "AUTH_TOKEN (AGENT_TOKEN из server .env)"

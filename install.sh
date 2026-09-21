@@ -176,6 +176,8 @@ print_menu_box() {
     box_line "4) Статус       - что установлено и работает" "${C_NUM}4)${C_RESET} Статус       - что установлено и работает"
     box_line "5) Диагностика  - проверить установленные компоненты" "${C_NUM}5)${C_RESET} Диагностика  - проверить установленные компоненты"
     box_line "6) Управление скриптом  - переустановка, обновление" "${C_NUM}6)${C_RESET} Управление скриптом  - переустановка, обновление"
+    box_line "7) Добавить ноду       - команда установки для новой VPN-ноды" "${C_NUM}7)${C_RESET} Добавить ноду       - команда установки для новой VPN-ноды"
+    box_line "8) Сбросить ключ входа - новый пароль для входа в панель" "${C_NUM}8)${C_RESET} Сбросить ключ входа - новый пароль для входа в панель"
     box_empty
     box_line "0) Выход" "${C_NUM}0)${C_RESET} Выход"
     box_bottom
@@ -273,7 +275,7 @@ show_menu() {
     print_menu_box
     echo
     local choice
-    read -r -p "$(printf "${C_LABEL}Выбери действие${C_RESET} ${C_OFF}[0-6]${C_RESET}: ")" choice </dev/tty
+    read -r -p "$(printf "${C_LABEL}Выбери действие${C_RESET} ${C_OFF}[0-8]${C_RESET}: ")" choice </dev/tty
     case "$choice" in
         1) install_both; read -r -p "Enter - назад в меню" _ </dev/tty; show_menu ;;
         2) exec bash "$PROJECT_DIR/scripts/install-agent.sh" ;;
@@ -281,9 +283,132 @@ show_menu() {
         4) show_status; show_menu ;;
         5) run_doctor; show_menu ;;
         6) script_management_menu; show_menu ;;
+        7) add_node_via_cli; read -r -p "Enter - назад в меню" _ </dev/tty; show_menu ;;
+        8) reset_api_token; read -r -p "Enter - назад в меню" _ </dev/tty; show_menu ;;
         0) exit 0 ;;
         *) echo "Неверный выбор."; sleep 1; show_menu ;;
     esac
+}
+
+# jq is the one new dependency this needs (parsing the panel's JSON API
+# from a shell script without it is real pain) - installed on demand, same
+# bootstrap pattern as Docker itself, rather than assumed present.
+ensure_jq() {
+    command -v jq >/dev/null 2>&1 && return
+    echo "[*] Устанавливаю jq ..."
+    apt-get update -qq && apt-get install -y -qq jq
+}
+
+# Flow 3 from the "add a node" trio: run this ON the panel server, pick a
+# Remnawave node from a plain numbered list (same linking logic as
+# clicking "Добавить ноду" in the web UI — see handleCreateNodeFromPanel),
+# and get back the one-line command to go paste on the actual VPN node's
+# own terminal.
+add_node_via_cli() {
+    if ! server_installed; then
+        echo "Server не установлен на этой машине — команду добавления ноды может выдать только сервер." >&2
+        return 1
+    fi
+    ensure_jq
+
+    local api_token
+    api_token="$(grep -E '^API_TOKEN=' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+    if [ -z "$api_token" ]; then
+        echo "API_TOKEN не найден в $PROJECT_DIR/.env" >&2
+        return 1
+    fi
+
+    echo
+    echo "[*] Загружаю список нод панели ..."
+    local resp
+    resp="$(curl -fsS -H "Authorization: Bearer $api_token" http://localhost:8237/api/remnawave/nodes/list)" \
+        || { echo "Не удалось получить список нод (сервер отвечает?)" >&2; return 1; }
+
+    # Enabled and not yet linked — same default view as the web picker.
+    # linked_to is only present in the JSON when set (omitempty), so
+    # `.linked_to == null` covers both "absent" and "explicit null".
+    local rows
+    rows="$(echo "$resp" | jq -r '[.[] | select(.is_disabled==false and (.linked_to==null))] | sort_by(.name) | .[] | "\(.uuid)\t\(.name)\t\(.address):\(.port)"')"
+    if [ -z "$rows" ]; then
+        echo "Нет доступных нод — все включённые ноды панели уже привязаны."
+        echo "Полный список и переключение фильтров — в веб-панели, «Добавить ноду»."
+        return 0
+    fi
+
+    echo
+    echo "Доступные ноды панели (включённые, ещё не привязанные):"
+    echo
+    local i=1 uuids=() names=()
+    while IFS=$'\t' read -r uuid name addr; do
+        printf "  ${C_NUM}%2d)${C_RESET} %-30s %s\n" "$i" "$name" "$addr"
+        uuids+=("$uuid")
+        names+=("$name")
+        i=$((i + 1))
+    done <<< "$rows"
+
+    echo
+    local choice
+    read -r -p "Выбери номер (0 - отмена): " choice </dev/tty
+    [ "$choice" = "0" ] && { echo "Отменено."; return 0; }
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#uuids[@]}" ]; then
+        echo "Неверный выбор." >&2
+        return 1
+    fi
+    local uuid="${uuids[$((choice - 1))]}" name="${names[$((choice - 1))]}"
+
+    local link_resp node_id command
+    link_resp="$(curl -fsS -X POST -H "Authorization: Bearer $api_token" -H "Content-Type: application/json" \
+        -d "{\"remna_uuid\":\"${uuid}\"}" http://localhost:8237/api/nodes/create-from-panel)" \
+        || { echo "Не удалось привязать ноду" >&2; return 1; }
+    node_id="$(echo "$link_resp" | jq -r '.node_id')"
+    command="$(echo "$link_resp" | jq -r '.command')"
+    if [ -z "$node_id" ] || [ "$node_id" = "null" ]; then
+        echo "Сервер не вернул node_id: $link_resp" >&2
+        return 1
+    fi
+
+    cat <<MSG
+
+${C_OK}Нода «${name}» привязана как node_id=${node_id}${C_RESET}
+
+Выполни эту команду на сервере ${C_BOLD}этой самой ноды${C_RESET} (не здесь) по SSH, от root:
+
+${command}
+
+MSG
+}
+
+# The API_TOKEN is what the login screen checks — resetting it
+# immediately logs out every open browser session, which is the whole
+# point (e.g. the token leaked, or someone who had it shouldn't anymore).
+reset_api_token() {
+    if ! server_installed; then
+        echo "Server не установлен на этой машине." >&2
+        return 1
+    fi
+    echo
+    echo "Это сгенерирует новый ключ входа в панель и перезапустит Server."
+    echo "Все, кто сейчас залогинен, будут разлогинены и введут новый ключ."
+    local confirm
+    read -r -p "Продолжить? (y/n): " confirm </dev/tty
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Отменено."
+        return 0
+    fi
+
+    local new_token
+    new_token="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p)"
+    sed -i "s|^API_TOKEN=.*|API_TOKEN=${new_token}|" "$PROJECT_DIR/.env"
+
+    echo "[*] Перезапускаю Server ..."
+    (cd "$PROJECT_DIR" && docker compose up -d --force-recreate xray-log-analyzer) >/dev/null
+
+    cat <<MSG
+
+${C_OK}Новый ключ входа: ${C_BOLD}${new_token}${C_RESET}
+
+Сохрани его — старый больше не работает, включая уже открытые вкладки панели.
+MSG
 }
 
 install_both() {

@@ -19,6 +19,56 @@ export interface NodeStats {
   last_batch_time: string;
   last_batch_count: number;
   is_connected: boolean;
+  // Remnawave panel enrichment — absent when this node_id has no matching
+  // panel node (name mismatch, or panel not synced yet).
+  remna_name?: string;
+  remna_address?: string;
+  remna_port?: number;
+  remna_country_code?: string;
+  remna_traffic_used?: number;
+  remna_traffic_total?: number;
+  remna_is_disabled?: boolean;
+  remna_tags?: string[];
+  remna_is_connected?: boolean;
+  agent_uptime_seconds?: number;
+}
+
+export interface NodeLiveView {
+  node_id: string;
+  remna_is_connected: boolean;
+  remna_is_disabled: boolean;
+  remna_users_online: number;
+  xray_uptime_seconds: number;
+  rx_bytes_per_sec: number;
+  tx_bytes_per_sec: number;
+}
+
+export interface PairingRequest {
+  Code: string;
+  Hint: string;
+  NodeID: string | null;
+  Approved: boolean;
+  CreatedAt: string;
+  ExpiresAt: string;
+}
+
+export interface RemnaNodeOption {
+  uuid: string;
+  name: string;
+  address: string;
+  port: number;
+  country_code: string;
+  is_disabled: boolean;
+  is_connected: boolean;
+  traffic_used: number;
+  traffic_total: number;
+  users_online: number;
+  tags: string[] | null;
+  linked_to?: string;
+  // Only meaningful when linked_to is set: whether that agent is actually
+  // talking to us right now (live WS client map), not just present in the
+  // DB link table.
+  linked_agent_connected?: boolean;
 }
 
 export interface UserStats {

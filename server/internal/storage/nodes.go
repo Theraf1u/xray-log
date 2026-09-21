@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
+	"strings"
 )
 
 // LookupNodeID resolves a text node_id (e.g. "ru-bridge") to its smallint
@@ -137,7 +138,16 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 			COALESCE(online.cnt, 0) AS online_users,
 			ns.last_seen,
 			ns.last_batch_time,
-			ns.last_batch_count
+			ns.last_batch_count,
+			rn.name,
+			rn.address,
+			rn.port,
+			rn.country_code,
+			rn.traffic_used,
+			rn.traffic_total,
+			rn.is_disabled,
+			rn.is_connected,
+			COALESCE(rn.tags::text, '{}')
 		FROM node_stats ns
 		LEFT JOIN (
 			SELECT nd.node_id AS node_text_id, COUNT(DISTINCT us.user_email) AS cnt
@@ -146,6 +156,8 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 			WHERE us.last_seen > $1
 			GROUP BY nd.node_id
 		) online ON online.node_text_id = ns.node_id
+		LEFT JOIN node_remna_map m ON m.node_id = ns.node_id
+		LEFT JOIN remna_nodes rn ON rn.uuid = m.remna_uuid
 		ORDER BY ns.total_requests DESC
 	`, windowAgo)
 	if err != nil {
@@ -157,7 +169,14 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 	for rows.Next() {
 		n := &models.NodeStats{}
 		var lastSeen, lastBatch *time.Time
-		err := rows.Scan(&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.OnlineUsers, &lastSeen, &lastBatch, &n.LastBatchCount)
+		var remnaIsDisabledInt, remnaIsConnectedInt *int
+		var tagsRaw string
+		err := rows.Scan(
+			&n.NodeID, &n.TotalRequests, &n.BlacklistHits, &n.UniqueUsers, &n.OnlineUsers,
+			&lastSeen, &lastBatch, &n.LastBatchCount,
+			&n.RemnaName, &n.RemnaAddress, &n.RemnaPort, &n.RemnaCountryCode,
+			&n.RemnaTrafficUsed, &n.RemnaTrafficTotal, &remnaIsDisabledInt, &remnaIsConnectedInt, &tagsRaw,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -167,6 +186,15 @@ func (s *Storage) GetNodeStats(ctx context.Context) ([]*models.NodeStats, error)
 		if lastBatch != nil {
 			n.LastBatchTime = *lastBatch
 		}
+		if remnaIsDisabledInt != nil {
+			disabled := *remnaIsDisabledInt != 0
+			n.RemnaIsDisabled = &disabled
+		}
+		if remnaIsConnectedInt != nil {
+			connected := *remnaIsConnectedInt != 0
+			n.RemnaIsConnected = &connected
+		}
+		n.RemnaTags = parsePGTextArray(tagsRaw)
 		nodes = append(nodes, n)
 	}
 	if err := rows.Err(); err != nil {
@@ -269,4 +297,313 @@ func (s *Storage) CleanupInactiveNodes(ctx context.Context, olderThan time.Durat
 		return 0, err
 	}
 	return int(removed), nil
+}
+
+
+// RemnaNodeOption is a lightweight projection of remna_nodes for the
+// node-linking picker in the admin UI.
+type RemnaNodeOption struct {
+	UUID         string   `json:"uuid"`
+	Name         string   `json:"name"`
+	Address      string   `json:"address"`
+	Port         int      `json:"port"`
+	CountryCode  string   `json:"country_code"`
+	IsDisabled   bool     `json:"is_disabled"`
+	IsConnected  bool     `json:"is_connected"` // panel's own view of this node's health
+	TrafficUsed  int64    `json:"traffic_used"`
+	TrafficTotal int64    `json:"traffic_total"` // 0 means unlimited
+	UsersOnline  int      `json:"users_online"`
+	Tags         []string `json:"tags"`
+	LinkedTo     *string  `json:"linked_to,omitempty"` // node_id this uuid is already linked to, if any
+}
+
+// ListRemnaNodeOptions returns every synced Remnawave panel node for the
+// manual link picker, including which analyzer node_id (if any) it's
+// already linked to so the UI can show that instead of offering a second
+// link to the same panel node. Whether that linked agent is *actually*
+// connected right now is filled in by the caller (handleRemnaNodesList),
+// which has access to the live WebSocket client map — this layer only
+// knows what's in Postgres.
+func (s *Storage) ListRemnaNodeOptions(ctx context.Context) ([]*RemnaNodeOption, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rn.uuid, rn.name, rn.address, rn.port, rn.country_code, rn.is_disabled,
+		       rn.is_connected, rn.traffic_used, rn.traffic_total, rn.users_online, rn.tags,
+		       m.node_id
+		FROM remna_nodes rn
+		LEFT JOIN node_remna_map m ON m.remna_uuid = rn.uuid
+		ORDER BY rn.name
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*RemnaNodeOption
+	for rows.Next() {
+		o := &RemnaNodeOption{}
+		var isDisabledInt, isConnectedInt int
+		var tagsRaw string
+		var linkedNodeID *string
+		if err := rows.Scan(
+			&o.UUID, &o.Name, &o.Address, &o.Port, &o.CountryCode, &isDisabledInt,
+			&isConnectedInt, &o.TrafficUsed, &o.TrafficTotal, &o.UsersOnline, &tagsRaw,
+			&linkedNodeID,
+		); err != nil {
+			return nil, err
+		}
+		o.IsDisabled = isDisabledInt != 0
+		o.IsConnected = isConnectedInt != 0
+		o.Tags = parsePGTextArray(tagsRaw)
+		o.LinkedTo = linkedNodeID
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// parsePGTextArray decodes Postgres's text[] wire literal ("{a,b,c}") as
+// returned by a plain database/sql Scan into a []string. The pgx stdlib
+// driver used here (via s.db, a *sql.DB) hands back array columns as this
+// raw literal string rather than a Go slice when scanned through the
+// generic database/sql path — going through lib/pq's pq.Array() wrapper
+// just for one column wasn't worth a new dependency, so this parses the
+// simple case directly. Tag names are plain identifiers with no commas,
+// braces, or quotes, so no escaping/quoting logic is needed.
+func parsePGTextArray(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if len(raw) < 2 || raw[0] != '{' || raw[len(raw)-1] != '}' {
+		return nil
+	}
+	inner := raw[1 : len(raw)-1]
+	if inner == "" {
+		return nil
+	}
+	parts := strings.Split(inner, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.Trim(p, `" `)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// LinkNodeRemna records an admin-approved link from an agent node_id to a
+// Remnawave panel node uuid. One node_id maps to at most one panel node
+// (PRIMARY KEY on node_id); re-linking overwrites the previous choice.
+func (s *Storage) LinkNodeRemna(ctx context.Context, nodeID, remnaUUID string) error {
+	if nodeID == "" || remnaUUID == "" {
+		return fmt.Errorf("node_id and remna_uuid are required")
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO node_remna_map (node_id, remna_uuid, linked_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (node_id) DO UPDATE SET
+			remna_uuid = EXCLUDED.remna_uuid,
+			linked_at = EXCLUDED.linked_at
+	`, nodeID, remnaUUID)
+	return err
+}
+
+// UnlinkNodeRemna removes a previously approved node_id -> panel node link.
+func (s *Storage) UnlinkNodeRemna(ctx context.Context, nodeID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM node_remna_map WHERE node_id = $1`, nodeID)
+	return err
+}
+
+
+// UpdateNodeConnectIP records the real source IP of an agent's latest
+// WebSocket handshake (see nodes.last_connect_ip in schema.sql). Best-effort:
+// callers log but don't fail the connection on error.
+func (s *Storage) UpdateNodeConnectIP(ctx context.Context, nodeID, ip string) error {
+	if nodeID == "" || ip == "" {
+		return nil
+	}
+	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE nodes SET last_connect_ip = $1 WHERE id = $2`, ip, int16(nid))
+	return err
+}
+
+
+// NodeLiveView is the fast-changing subset of a node's Remnawave telemetry,
+// for the ~1s poll used by the nodes page (see UpdateRemnaNodeLive for the
+// write side). Deliberately excludes everything that doesn't change every
+// second (name, address, tags) so this query and its payload stay tiny.
+type NodeLiveView struct {
+	NodeID           string  `json:"node_id"`
+	RemnaIsConnected bool    `json:"remna_is_connected"`
+	RemnaIsDisabled  bool    `json:"remna_is_disabled"`
+	UsersOnline      int     `json:"remna_users_online"`
+	XrayUptime       float64 `json:"xray_uptime_seconds"`
+	RxBytesPerSec    float64 `json:"rx_bytes_per_sec"`
+	TxBytesPerSec    float64 `json:"tx_bytes_per_sec"`
+}
+
+// GetNodesLive returns live telemetry for every agent node_id that's
+// linked to a Remnawave panel node, keyed for the frontend's 1s poll.
+// Deliberately uncached (unlike GetNodeStats) — a 10s cache would defeat
+// the point of polling every second.
+func (s *Storage) GetNodesLive(ctx context.Context) ([]*NodeLiveView, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT m.node_id, rn.is_connected, rn.is_disabled, rn.users_online,
+		       rn.xray_uptime_seconds, rn.rx_bytes_per_sec, rn.tx_bytes_per_sec
+		FROM node_remna_map m
+		JOIN remna_nodes rn ON rn.uuid = m.remna_uuid
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*NodeLiveView
+	for rows.Next() {
+		v := &NodeLiveView{}
+		var isConnectedInt, isDisabledInt int
+		if err := rows.Scan(
+			&v.NodeID, &isConnectedInt, &isDisabledInt, &v.UsersOnline,
+			&v.XrayUptime, &v.RxBytesPerSec, &v.TxBytesPerSec,
+		); err != nil {
+			return nil, err
+		}
+		v.RemnaIsConnected = isConnectedInt != 0
+		v.RemnaIsDisabled = isDisabledInt != 0
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+
+// NodeIDForRemnaUUID returns the node_id already linked to this Remnawave
+// panel node, if any. Used by the "add node from panel" flow to make
+// picking the same panel tile twice idempotent (reuse the existing link
+// and command) instead of creating a second, orphaned node_id.
+func (s *Storage) NodeIDForRemnaUUID(ctx context.Context, remnaUUID string) (string, error) {
+	var nodeID string
+	err := s.db.QueryRowContext(ctx, `SELECT node_id FROM node_remna_map WHERE remna_uuid = $1`, remnaUUID).Scan(&nodeID)
+	return nodeID, err
+}
+
+// NodeIDTaken checks both places a node_id could already exist: linked
+// (node_remna_map) or previously seen from a live agent (nodes) — a
+// generated slug must avoid both, not just one, or "add node from panel"
+// could silently steal an ID some other already-connected agent is using.
+func (s *Storage) NodeIDTaken(ctx context.Context, nodeID string) (bool, error) {
+	var taken bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM node_remna_map WHERE node_id = $1)
+		    OR EXISTS(SELECT 1 FROM nodes WHERE node_id = $1)
+	`, nodeID).Scan(&taken)
+	return taken, err
+}
+
+// RemnaNodeBasic is the minimal projection needed to derive a node_id slug
+// from a panel node's name.
+type RemnaNodeBasic struct {
+	Name       string
+	IsDisabled bool
+}
+
+// GetRemnaNodeBasic looks up a single panel node by uuid.
+func (s *Storage) GetRemnaNodeBasic(ctx context.Context, remnaUUID string) (*RemnaNodeBasic, error) {
+	b := &RemnaNodeBasic{}
+	var isDisabledInt int
+	err := s.db.QueryRowContext(ctx, `SELECT name, is_disabled FROM remna_nodes WHERE uuid = $1`, remnaUUID).
+		Scan(&b.Name, &isDisabledInt)
+	if err != nil {
+		return nil, err
+	}
+	b.IsDisabled = isDisabledInt != 0
+	return b, nil
+}
+
+
+// PairingRequest is one row of node_pairing_requests — see schema.sql for
+// the full flow (a fresh node requests a code before it has credentials,
+// the admin approves it against a panel node, the node polls until
+// approved).
+type PairingRequest struct {
+	Code      string
+	Hint      string
+	NodeID    *string
+	Approved  bool
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+// CreatePairingRequest inserts a new pending code. Caller (the HTTP
+// handler) is responsible for generating a code that doesn't collide —
+// this just does the INSERT.
+func (s *Storage) CreatePairingRequest(ctx context.Context, code, hint string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO node_pairing_requests (code, hint, expires_at) VALUES ($1, $2, $3)
+	`, code, hint, expiresAt)
+	return err
+}
+
+// GetPairingRequest fetches one code's current state, or nil if it doesn't
+// exist. Expiry is checked by the caller (still returning an expired row
+// lets the admin's "pending" list explain *why* a code stopped working
+// instead of it just silently vanishing).
+func (s *Storage) GetPairingRequest(ctx context.Context, code string) (*PairingRequest, error) {
+	p := &PairingRequest{}
+	var approvedInt int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT code, hint, node_id, approved, created_at, expires_at
+		FROM node_pairing_requests WHERE code = $1
+	`, code).Scan(&p.Code, &p.Hint, &p.NodeID, &approvedInt, &p.CreatedAt, &p.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	p.Approved = approvedInt != 0
+	return p, nil
+}
+
+// ListPendingPairingRequests returns not-yet-approved, not-yet-expired
+// codes for the admin's "Add node" picker.
+func (s *Storage) ListPendingPairingRequests(ctx context.Context) ([]*PairingRequest, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT code, hint, node_id, approved, created_at, expires_at
+		FROM node_pairing_requests
+		WHERE approved = 0 AND expires_at > now()
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*PairingRequest
+	for rows.Next() {
+		p := &PairingRequest{}
+		var approvedInt int
+		if err := rows.Scan(&p.Code, &p.Hint, &p.NodeID, &approvedInt, &p.CreatedAt, &p.ExpiresAt); err != nil {
+			return nil, err
+		}
+		p.Approved = approvedInt != 0
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ApprovePairingRequest stamps a code with the node_id the admin picked
+// for it. The waiting node's next poll (GetPairingRequest) sees Approved
+// and NodeID set and writes its own .env from that.
+func (s *Storage) ApprovePairingRequest(ctx context.Context, code, nodeID string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE node_pairing_requests SET node_id = $1, approved = 1
+		WHERE code = $2 AND expires_at > now() AND approved = 0
+	`, nodeID, code)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("pairing code not found, expired, or already approved")
+	}
+	return nil
 }
