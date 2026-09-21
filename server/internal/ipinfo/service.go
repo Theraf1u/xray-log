@@ -56,13 +56,30 @@ type Service struct {
 	rateLimit chan struct{}
 	rateMu sync.Mutex
 	lastRequest time.Time
+
+	// Circuit breaker: ip-api.com is unreachable from some networks (DPI/DNS
+	// interception silently returns a black-holed IP, so the request just
+	// hangs instead of failing fast). Without this, a broken network turns a
+	// page with N IP badges into N serialized ~10s+ stalls — every badge on
+	// the page shows an empty skeleton for minutes. After breakerThreshold
+	// consecutive failures, skip the network call entirely for
+	// breakerCooldown and return the graceful fallback (raw IP, no geo)
+	// immediately.
+	breakerMu      sync.Mutex
+	consecutiveErr int
+	breakerUntil   time.Time
 }
+
+const (
+	breakerThreshold = 3
+	breakerCooldown   = 2 * time.Minute
+)
 
 // NewService creates a new IP info service
 func NewService() *Service {
 	s := &Service{
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout: 3 * time.Second,
 		},
 		cache:     make(map[string]*IPInfo),
 		cacheTTL:  24 * time.Hour,         // Cache for 24 hours
@@ -102,6 +119,10 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 	}
 	s.mu.RUnlock()
 
+	if fallback, tripped := s.breakerFallback(ip); tripped {
+		return fallback, nil
+	}
+
 	// Rate limiting - wait for slot
 	select {
 	case s.rateLimit <- struct{}{}:
@@ -127,8 +148,10 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 	// Fetch from API
 	info, err := s.fetchFromAPI(ctx, ip)
 	if err != nil {
+		s.recordFailure()
 		return nil, err
 	}
+	s.recordSuccess()
 
 	// Store in cache
 	s.mu.Lock()
@@ -136,6 +159,36 @@ func (s *Service) Lookup(ctx context.Context, ip string) (*IPInfo, error) {
 	s.mu.Unlock()
 
 	return info, nil
+}
+
+// breakerFallback returns (fallback, true) when the breaker is open — i.e.
+// ip-api.com has failed breakerThreshold times in a row and we're still
+// inside the cooldown window — so callers skip the network entirely and get
+// the same graceful "just show the IP" result the UI already renders for a
+// private/unresolvable address, instead of waiting out another timeout.
+func (s *Service) breakerFallback(ip string) (*IPInfo, bool) {
+	s.breakerMu.Lock()
+	defer s.breakerMu.Unlock()
+	if s.consecutiveErr < breakerThreshold || time.Now().Before(s.breakerUntil) == false {
+		return nil, false
+	}
+	return &IPInfo{IP: ip, Country: "Private", CachedAt: time.Now()}, true
+}
+
+func (s *Service) recordFailure() {
+	s.breakerMu.Lock()
+	defer s.breakerMu.Unlock()
+	s.consecutiveErr++
+	if s.consecutiveErr >= breakerThreshold {
+		s.breakerUntil = time.Now().Add(breakerCooldown)
+	}
+}
+
+func (s *Service) recordSuccess() {
+	s.breakerMu.Lock()
+	defer s.breakerMu.Unlock()
+	s.consecutiveErr = 0
+	s.breakerUntil = time.Time{}
 }
 
 
