@@ -187,8 +187,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 
 	// Update aggregated stats
 	if err := a.storage.UpdateNodeStats(ctx, batch.NodeID, processed, blacklistHits, batch.Count); err != nil {
-		// log.Printf("analyzer: failed to update node stats: %v", err)
-		_ = err
+		log.Printf("analyzer: failed to update node stats for %s: %v", batch.NodeID, err)
 	}
 
 	for user, requests := range userRequests {
@@ -197,8 +196,7 @@ func (a *Analyzer) ProcessBatch(ctx context.Context, batch *models.LogBatch) (pr
 		lastIP := userLastIP[user]
 		uniqueDests := len(userDestinations[user])
 		if err := a.storage.UpdateUserStats(ctx, batch.NodeID, user, requests, hits, domain, uniqueDests, lastIP); err != nil {
-			// log.Printf("analyzer: failed to update user stats: %v", err)
-			_ = err
+			log.Printf("analyzer: failed to update user stats for %s/%s: %v", batch.NodeID, user, err)
 		}
 
 		// Record user IP history with geo enrichment.
