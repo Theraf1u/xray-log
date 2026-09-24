@@ -321,7 +321,7 @@
     "offlineNodes": "Offline Nodes",
     "offlineNodesDesc": "Not currently connected. Delete old nodes to clean up.",
     "deleteNodeTitle": "Delete node \"{node}\"?",
-    "deleteNodeDesc": "This will permanently delete the node and all its statistics. This action cannot be undone.",
+    "deleteNodeDesc": "The node will stop accepting connections and disappear from the list. All its statistics and logs stay in the database forever - you can still find them in exports. To reconnect this node, link it again.",
     "cancel": "Cancel",
     "deleting": "Deleting...",
     "delete": "Delete"
