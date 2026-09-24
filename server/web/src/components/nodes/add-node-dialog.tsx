@@ -64,11 +64,22 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
   const [copied, setCopied] = useState(false);
   const [pendingPairings, setPendingPairings] = useState<PairingRequest[]>([]);
   const [activeCode, setActiveCode] = useState<string | null>(null);
+  const [showCommand, setShowCommand] = useState(false);
 
-  const connected = useMemo(
+  // The server already knows at generation time whether an agent for this
+  // node_id is live (result.already_connected) — most often because it was
+  // deleted and re-picked while its container kept running and retrying in
+  // the background, so it reconnects the instant the tombstone lifts,
+  // sometimes before the admin even sees the command. Trusting that flag
+  // up front avoids ever showing "waiting for connection..." next to a
+  // node that's already connected — the two used to render at once and
+  // looked like a race/bug rather than the two takes on the same fact
+  // they actually are.
+  const connectedLive = useMemo(
     () => !!result && nodes.some((n) => n.node_id === result.node_id && n.is_connected),
     [nodes, result]
   );
+  const connected = !!result && (result.already_connected || connectedLive);
 
   useEffect(() => {
     if (!open) return;
@@ -78,6 +89,7 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
     setPairedResult(null);
     setActiveCode(null);
     setError(null);
+    setShowCommand(false);
     setLoadingOptions(true);
     authFetch("/api/remnawave/nodes/list")
       .then(async (res) => {
@@ -145,6 +157,7 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
         if (!res.ok) throw new Error(await res.text());
         const data: InstallCommandResponse = await res.json();
         setResult(data);
+        setShowCommand(!data.already_connected);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("genericError"));
@@ -216,33 +229,48 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
                   {t("pickAnother")}
                 </Button>
 
-                {result.already_connected && (
-                  <p className="text-xs text-yellow-600">{t("alreadyConnectedWarning")}</p>
+                {result.already_connected ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-600">
+                    <Check className="h-4 w-4 shrink-0" />
+                    {t("alreadyConnected", { node: result.node_id })}
+                  </div>
+                ) : (
+                  <div
+                    className={
+                      connected
+                        ? "flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-600"
+                        : "flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+                    }
+                  >
+                    {connected ? <Check className="h-4 w-4 shrink-0" /> : <Wifi className="h-4 w-4 shrink-0 animate-pulse" />}
+                    {connected ? t("connected", { node: result.node_id }) : t("waitingForConnection")}
+                  </div>
                 )}
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-muted-foreground">{t("commandLabel")}</label>
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={copy}>
-                      {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                      <span className="ml-1.5 text-xs">{copied ? t("copied") : t("copy")}</span>
-                    </Button>
+                {result.already_connected && !showCommand ? (
+                  <button
+                    onClick={() => setShowCommand(true)}
+                    className="text-xs text-muted-foreground underline decoration-dotted hover:text-foreground"
+                  >
+                    {t("showReinstallCommand")}
+                  </button>
+                ) : (
+                  <div className="space-y-1.5">
+                    {result.already_connected && (
+                      <p className="text-xs text-muted-foreground">{t("reinstallHint")}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-muted-foreground">{t("commandLabel")}</label>
+                      <Button variant="ghost" size="sm" className="h-7 px-2" onClick={copy}>
+                        {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        <span className="ml-1.5 text-xs">{copied ? t("copied") : t("copy")}</span>
+                      </Button>
+                    </div>
+                    <pre className="glass-inset overflow-x-auto whitespace-pre-wrap break-all p-3 font-mono text-xs">
+                      {result.command}
+                    </pre>
                   </div>
-                  <pre className="glass-inset overflow-x-auto whitespace-pre-wrap break-all p-3 font-mono text-xs">
-                    {result.command}
-                  </pre>
-                </div>
-
-                <div
-                  className={
-                    connected
-                      ? "flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-600"
-                      : "flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
-                  }
-                >
-                  {connected ? <Check className="h-4 w-4 shrink-0" /> : <Wifi className="h-4 w-4 shrink-0 animate-pulse" />}
-                  {connected ? t("connected", { node: result.node_id }) : t("waitingForConnection")}
-                </div>
+                )}
               </div>
             ) : (
               <>

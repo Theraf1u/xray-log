@@ -131,6 +131,24 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.clients[handshake.NodeID] = client
 	s.clientsMu.Unlock()
 
+	// GetNodeStats (what /api/nodes and the dashboard push both return)
+	// selects FROM node_stats, so a node with no rows there is invisible
+	// no matter how live its WebSocket is — markNodesConnected only marks
+	// IsConnected on rows already in that result set. Without this, a
+	// freshly-connected agent stays completely absent from the panel
+	// until its first log batch happens to land, which can take anywhere
+	// from seconds to several minutes under load. Seed the row (zero
+	// deltas — just establishes last_seen/existence) the instant the
+	// handshake succeeds, so "connected" in the terminal and "connected"
+	// in the panel stop disagreeing.
+	go func() {
+		if err := s.storage.UpdateNodeStats(context.Background(), handshake.NodeID, 0, 0, 0); err != nil {
+			log.Printf("server: failed to seed node_stats for %s: %v", handshake.NodeID, err)
+			return
+		}
+		s.BroadcastDashboardUpdate()
+	}()
+
 	// Handle messages
 	s.handleClient(client)
 
