@@ -91,11 +91,21 @@ export function AddNodeDialog({ nodes }: { nodes: NodeStats[] }) {
     setError(null);
     setShowCommand(false);
     setLoadingOptions(true);
-    authFetch("/api/remnawave/nodes/list")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(await res.text());
-        return res.json();
-      })
+    // Refresh remna_nodes from the Remnawave panel before listing options —
+    // the background sync runs on its own interval (REMNAWAVE_SYNC_INTERVAL,
+    // often a full minute), so without this the picker could show a node
+    // list that's already stale by the time someone opens it. Best-effort:
+    // if the sync call fails (Remnawave down, timeout), fall through to
+    // whatever the last background sync left in remna_nodes rather than
+    // blocking the picker on it.
+    authFetch("/api/remnawave/nodes/sync", { method: "POST" })
+      .catch(() => {})
+      .then(() =>
+        authFetch("/api/remnawave/nodes/list").then(async (res) => {
+          if (!res.ok) throw new Error(await res.text());
+          return res.json();
+        })
+      )
       .then((data: RemnaNodeOption[]) => setOptions(data ?? []))
       .catch((e) => setError(e instanceof Error ? e.message : t("genericError")))
       .finally(() => setLoadingOptions(false));

@@ -231,6 +231,21 @@ func (s *SyncService) ForceSync(ctx context.Context) error {
 	return nil
 }
 
+// SyncNodesJust refreshes only the Remnawave node list (one GET /api/nodes
+// call plus upserts) without touching users/HWID — the full sync() a large
+// deployment's user count can make take a while, which is far more than the
+// "Add node" picker needs just to show the panel's current node set. Unlike
+// sync() this doesn't take syncMu: syncNodes only writes to storage, so a
+// call here racing an in-progress full sync is harmless (both only ever
+// move remna_nodes data forward), matching the reasoning already used for
+// syncLive.
+func (s *SyncService) SyncNodesJust(ctx context.Context) error {
+	if !s.client.IsConfigured() {
+		return fmt.Errorf("client not configured")
+	}
+	return s.syncNodes(ctx)
+}
+
 // Start begins the periodic synchronization.
 //
 // It no longer exits for good when Remnawave is unconfigured at boot: the

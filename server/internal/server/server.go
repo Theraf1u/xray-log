@@ -305,6 +305,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux.HandleFunc("/api/nodes/pair/approve", s.requireAPIToken(s.handlePairApprove))
 	mux.HandleFunc("/api/install/", s.handleInstallScript)
 	mux.HandleFunc("/api/remnawave/nodes/list", s.requireAPIToken(s.handleRemnaNodesList))
+	mux.HandleFunc("/api/remnawave/nodes/sync", s.requireAPIToken(s.handleRemnaNodesSync))
 	mux.HandleFunc("/api/nodes/live", s.requireAPIToken(s.handleNodesLive))
 	mux.HandleFunc("/api/nodes/link-remnawave", s.requireAPIToken(s.handleLinkNodeRemna))
 	mux.HandleFunc("/api/nodes/unlink-remnawave", s.requireAPIToken(s.handleUnlinkNodeRemna))

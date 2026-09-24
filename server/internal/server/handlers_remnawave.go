@@ -72,6 +72,36 @@ func (s *Server) handleRemnawaveSync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRemnaNodesSync refreshes just the Remnawave node list on demand —
+// used by the "Add node" picker on open, so it shows the panel's current
+// node set instead of whatever the last up-to-a-minute-old background sync
+// (REMNAWAVE_SYNC_INTERVAL) happened to leave in remna_nodes.
+func (s *Server) handleRemnaNodesSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.remnawave == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Remnawave not configured",
+		})
+		return
+	}
+
+	if err := s.remnawave.SyncNodesJust(r.Context()); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+}
+
 // handleRemnawaveStats returns Remnawave sync statistics
 func (s *Server) handleRemnawaveStats(w http.ResponseWriter, r *http.Request) {
 	if s.remnawave == nil {
