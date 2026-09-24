@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -207,14 +208,9 @@ func buildUserSearchIDs(userEmail string) []string {
 	// Always include original
 	addID(userEmail)
 
-	// Extract numeric part and add variations
+	// Extract numeric part too (e.g. "anything_1301" -> "1301").
 	numericPart := extractNumericPart(userEmail)
-	if numericPart != "" {
-		addID(numericPart)
-		// Common prefixes used in the system
-		addID("us_" + numericPart)
-		addID("remnawave_" + numericPart)
-	}
+	addID(numericPart)
 
 	return searchIDs
 }
@@ -440,11 +436,42 @@ func (s *Storage) GetUserDetails(ctx context.Context, userEmail string) (*models
 	// threat_matches, user_threat_stats, user_risk_profiles — all have
 	// user_email as uuid). Without this, a text array against a uuid column
 	// returns zero rows because Postgres does uuid::text = ANY(text[]).
-	seenUUID := make(map[uuid.UUID]bool, len(searchIDs))
-	searchUUIDs := make([]uuid.UUID, 0, len(searchIDs))
+	seenUUID := make(map[uuid.UUID]bool, len(searchIDs)+1)
+	searchUUIDs := make([]uuid.UUID, 0, len(searchIDs)+1)
+
+	// remnaUUID is already known from the lookups above — resolving it again
+	// through ResolveUserEmailToUUID would just repeat the same query (or,
+	// worse, for an id it doesn't recognize, fall through to that function's
+	// SHA-1-derived-UUID fallback and write a bogus row into email_index).
+	if remnaUserExists {
+		if u, perr := uuid.Parse(remnaUUID); perr == nil {
+			seenUUID[u] = true
+			searchUUIDs = append(searchUUIDs, u)
+		}
+	}
+
+	// The remaining identifiers only matter for users with no remna_users
+	// row (or historical data recorded under a legacy synthetic UUID) — run
+	// them concurrently rather than one round trip at a time. This resolver
+	// touches the DB two or three times per id in the worst case, and
+	// GetUserDetails is on the hot path for every user-profile page load.
+	results := make(chan uuid.UUID, len(searchIDs))
+	var wg sync.WaitGroup
 	for _, id := range searchIDs {
-		u, err := s.ResolveUserEmailToUUID(ctx, id)
-		if err != nil || seenUUID[u] {
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			if u, err := s.ResolveUserEmailToUUID(ctx, id); err == nil {
+				results <- u
+			}
+		}(id)
+	}
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	for u := range results {
+		if seenUUID[u] {
 			continue
 		}
 		seenUUID[u] = true
