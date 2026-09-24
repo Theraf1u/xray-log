@@ -25,6 +25,13 @@ set -euo pipefail
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
+# Run non-interactively: without this, apt/needrestart can pop up a
+# whiptail dialog (e.g. "Pending kernel upgrade") that blocks forever
+# waiting for a keypress when this script runs in a real TTY (an admin's
+# own SSH session) instead of piped through curl|bash with no TTY at all.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
 REPO_URL="${REPO_URL:-https://github.com/Theraf1u/xray-log.git}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/xray-analyzer}"
 COMPOSE_DIR="$INSTALL_DIR"
