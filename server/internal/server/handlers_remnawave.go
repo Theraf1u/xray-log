@@ -91,7 +91,17 @@ func (s *Server) handleRemnaNodesSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.remnawave.SyncNodesJust(r.Context()); err != nil {
+	// The Remnawave panel has been observed taking 20-80+s to answer even a
+	// single GET /api/nodes when its own full user/HWID sync is in flight
+	// (they appear to queue behind each other on its side) — a 5s cap keeps
+	// a slow Remnawave from ever turning "click Add node" into a spinner
+	// that sits there for minutes. A timeout here just means the picker
+	// falls back to whatever the last successful sync (this one or the
+	// periodic background one) already left in remna_nodes.
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := s.remnawave.SyncNodesJust(ctx); err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
