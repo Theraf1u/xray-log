@@ -158,8 +158,7 @@ ok "Параметры: NODE_ID=$NODE_ID  SERVER_URL=$SERVER_URL  LOG_PATH=$LOG_
 
 # ─── Install Docker ─────────────────────────────────────────────────────────
 
-if ! command -v docker >/dev/null 2>&1; then
-    log "Docker не найден. Устанавливаю..."
+add_docker_apt_repo() {
     apt-get update -qq
     apt-get install -qq -y ca-certificates curl gnupg
 
@@ -174,6 +173,11 @@ if ! command -v docker >/dev/null 2>&1; then
         > /etc/apt/sources.list.d/docker.list
 
     apt-get update -qq
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+    log "Docker не найден. Устанавливаю..."
+    add_docker_apt_repo
     apt-get install -qq -y docker-ce docker-ce-cli containerd.io \
         docker-buildx-plugin docker-compose-plugin
 
@@ -181,6 +185,20 @@ if ! command -v docker >/dev/null 2>&1; then
     ok "Docker установлен"
 else
     ok "Docker уже установлен ($(docker --version))"
+fi
+
+# Некоторые провайдеры предустанавливают Docker без плагина docker compose
+# (например голый docker.io из apt) — без него билд/запуск агента падает молча.
+if ! docker compose version >/dev/null 2>&1; then
+    log "Плагин docker compose не найден. Устанавливаю docker-compose-plugin..."
+    if [[ ! -f /etc/apt/sources.list.d/docker.list ]]; then
+        add_docker_apt_repo
+    fi
+    apt-get install -qq -y docker-compose-plugin docker-buildx-plugin \
+        || die "Не удалось установить docker-compose-plugin"
+    docker compose version >/dev/null 2>&1 \
+        || die "docker compose всё ещё недоступен после установки плагина"
+    ok "docker-compose-plugin установлен ($(docker compose version --short 2>/dev/null))"
 fi
 
 # ─── Verify Xray writes access log ──────────────────────────────────────────
