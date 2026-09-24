@@ -2,6 +2,7 @@ package remnawave
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -95,13 +96,31 @@ func (c *IDCache) fetchAndCache(ctx context.Context, id string) string {
 		return id
 	}
 
+	// GetUsername is called in tight per-item loops (e.g. resolving display
+	// names for the dashboard's top-500 user list, or every category's top
+	// users) from the single-threaded WebSocket broadcast loop, which serves
+	// every connected dashboard client. Without a bound here, a slow or
+	// degraded Remnawave backend turns one cache-miss ID into a multi-second
+	// stall, and a handful of them in the same batch can block that shared
+	// loop — and therefore every client's live updates, including data that
+	// has nothing to do with usernames — for the duration. Capping each
+	// lookup means a bad Remnawave day degrades to "shows the raw ID" rather
+	// than "the whole dashboard stops updating".
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
 	user, err := c.client.GetUserByID(ctx, id)
 	if err != nil {
-		c.mu.Lock()
-		c.notFound[id] = true
-		c.mu.Unlock()
-		if c.redis != nil {
-			_ = c.redis.SetJSON(ctx, c.redisNFKey(id), true, c.notFoundTTL)
+		// A timeout means "Remnawave didn't answer in time", not "this user
+		// doesn't exist" — caching it as not-found would keep serving the
+		// raw ID for a full notFoundTTL even once Remnawave recovers.
+		if !errors.Is(err, context.DeadlineExceeded) {
+			c.mu.Lock()
+			c.notFound[id] = true
+			c.mu.Unlock()
+			if c.redis != nil {
+				_ = c.redis.SetJSON(context.Background(), c.redisNFKey(id), true, c.notFoundTTL)
+			}
 		}
 		return id
 	}
