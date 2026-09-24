@@ -22,6 +22,7 @@ import { isValidDate } from "@/lib/utils/date";
 import { UserDestinationsTable } from "@/components/users/user-destinations-table";
 import { UserBlacklistMatches } from "@/components/users/user-blacklist-matches";
 import { UserIPHistoryTable } from "@/components/users/user-ip-history";
+import { UserLocationMap } from "@/components/users/user-location-map";
 import { UserThreatsTable } from "@/components/users/user-threats-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -249,6 +250,8 @@ export default function UserDetailsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <UserLocationMap email={email} />
 
       <Card>
         <CardHeader>

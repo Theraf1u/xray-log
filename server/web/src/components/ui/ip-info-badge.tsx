@@ -48,6 +48,15 @@ export async function prefetchIPInfoBatch(ips: string[]): Promise<void> {
   }
 }
 
+// Synchronous cache read for call sites that resolve many IPs at once
+// outside the component-render cycle (e.g. building map markers after
+// prefetchIPInfoBatch resolves) and therefore can't call the useIPInfo()
+// hook once per IP — that count varies with the IP list, which breaks the
+// rules of hooks.
+export function getCachedIPInfo(ip: string): IPInfo | null {
+  return ipInfoCache.get(ip) || null;
+}
+
 export function useIPInfo(ip: string): { info: IPInfo | null; loading: boolean } {
   const [info, setInfo] = useState<IPInfo | null>(ipInfoCache.get(ip) || null);
   const [loading, setLoading] = useState(!ipInfoCache.has(ip));
