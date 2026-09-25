@@ -43,6 +43,15 @@ services:
       - REDIS_KEY_PREFIX=${REDIS_KEY_PREFIX:-analyzer:}
       - POSTGRES_URL=postgres://xray_analyzer:${POSTGRES_PASSWORD:-changeme_in_env}@analyzer-postgres:5432/xray_analyzer?sslmode=disable
       - STORAGE_MONITOR_PATH=/storage-monitor
+    # This host's upstream DNS resolves newpanel.lounge.click to
+    # 198.19.0.13, an RFC 2544 benchmark-range address that isn't routable —
+    # every Remnawave API call just hangs until it times out. Pinning the
+    # real IP here (confirmed via `dig @8.8.8.8 newpanel.lounge.click`)
+    # sidesteps the bad resolution entirely; same fix already applied
+    # ad-hoc for github.com earlier. Re-verify with `dig` if Remnawave ever
+    # moves hosts and this starts failing again.
+    extra_hosts:
+      - "newpanel.lounge.click:95.182.96.75"
     depends_on:
       analyzer-redis:
         condition: service_started
