@@ -145,29 +145,32 @@ func (s *Server) handleCorrelationSharedIPs(w http.ResponseWriter, r *http.Reque
 		Users         []string `json:"users"`
 	}
 
-	var enriched []EnrichedSharedIP
-	for _, ip := range sharedIPs {
-		eip := EnrichedSharedIP{
+	enriched := make([]EnrichedSharedIP, len(sharedIPs))
+	enrichedPtrs := make([]*EnrichedSharedIP, len(sharedIPs))
+	for i, ip := range sharedIPs {
+		enriched[i] = EnrichedSharedIP{
 			IPAddress:     ip.IPAddress,
 			UserCount:     ip.UserCount,
 			LastSeen:      ip.LastSeen.Format("2006-01-02 15:04:05"),
 			TotalRequests: ip.TotalRequests,
 		}
-
-		// Get users for this IP and resolve their usernames
-		users, err := s.storage.GetUsersForIP(r.Context(), ip.IPAddress)
-		if err == nil {
-			for _, u := range users {
-				username := u.UserEmail
-				if s.remnawave != nil {
-					username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
-				}
-				eip.Users = append(eip.Users, username)
-			}
-		}
-
-		enriched = append(enriched, eip)
+		enrichedPtrs[i] = &enriched[i]
 	}
+
+	resolveConcurrently(enrichedPtrs, func(eip *EnrichedSharedIP) {
+		// Get users for this IP and resolve their usernames
+		users, err := s.storage.GetUsersForIP(r.Context(), eip.IPAddress)
+		if err != nil {
+			return
+		}
+		for _, u := range users {
+			username := u.UserEmail
+			if s.remnawave != nil {
+				username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
+			}
+			eip.Users = append(eip.Users, username)
+		}
+	})
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"shared_ips": enriched,
@@ -212,30 +215,33 @@ func (s *Server) handleCorrelationSharedHWIDs(w http.ResponseWriter, r *http.Req
 		Users         []string `json:"users"`
 	}
 
-	var enriched []EnrichedSharedHWID
-	for _, hwid := range sharedHWIDs {
-		ehwid := EnrichedSharedHWID{
+	enriched := make([]EnrichedSharedHWID, len(sharedHWIDs))
+	enrichedPtrs := make([]*EnrichedSharedHWID, len(sharedHWIDs))
+	for i, hwid := range sharedHWIDs {
+		enriched[i] = EnrichedSharedHWID{
 			HWID:          hwid.HWID,
 			Platform:      hwid.Platform,
 			UserCount:     hwid.UserCount,
 			LastSeen:      hwid.LastSeen.Format("2006-01-02 15:04:05"),
 			TotalRequests: hwid.TotalRequests,
 		}
-
-		// Get users for this HWID and resolve their usernames
-		users, err := s.storage.GetUsersForHWID(r.Context(), hwid.HWID)
-		if err == nil {
-			for _, u := range users {
-				username := u.UserEmail
-				if s.remnawave != nil {
-					username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
-				}
-				ehwid.Users = append(ehwid.Users, username)
-			}
-		}
-
-		enriched = append(enriched, ehwid)
+		enrichedPtrs[i] = &enriched[i]
 	}
+
+	resolveConcurrently(enrichedPtrs, func(ehwid *EnrichedSharedHWID) {
+		// Get users for this HWID and resolve their usernames
+		users, err := s.storage.GetUsersForHWID(r.Context(), ehwid.HWID)
+		if err != nil {
+			return
+		}
+		for _, u := range users {
+			username := u.UserEmail
+			if s.remnawave != nil {
+				username = s.remnawave.ResolveUsername(r.Context(), u.UserEmail)
+			}
+			ehwid.Users = append(ehwid.Users, username)
+		}
+	})
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"shared_hwids": enriched,

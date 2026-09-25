@@ -9,6 +9,17 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN:-}
+      # Host's local FakeIP DNS (mihomo) rewrites these to unreachable
+      # 198.18.0.0/15 addresses inside the isolated build container (it
+      # runs with network=host, so it inherits the poisoned host resolver),
+      # which breaks `go mod`/`apk`/`npm`. Pin them to their real IPs
+      # (verified via 8.8.8.8) covering every stage of the multi-stage build.
+      extra_hosts:
+        - "proxy.golang.org:216.58.207.49"
+        - "sum.golang.org:142.251.38.145"
+        - "dl-cdn.alpinelinux.org:146.75.118.132"
+        - "registry.npmjs.org:104.16.5.34"
+        - "storage.googleapis.com:216.58.207.27"
     container_name: xray-log-analyzer
     restart: unless-stopped
     ports:
