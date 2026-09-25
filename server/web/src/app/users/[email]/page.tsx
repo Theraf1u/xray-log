@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useUserDetails } from "@/hooks/use-api";
@@ -31,6 +32,7 @@ export default function UserDetailsPage() {
   const params = useParams();
   const email = decodeURIComponent(params.email as string);
   const { details, loading, error } = useUserDetails(email);
+  const [focusedIP, setFocusedIP] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -251,7 +253,7 @@ export default function UserDetailsPage() {
         </CardContent>
       </Card>
 
-      <UserLocationMap email={email} />
+      <UserLocationMap email={email} focusIP={focusedIP} />
 
       <Card>
         <CardHeader>
@@ -262,7 +264,7 @@ export default function UserDetailsPage() {
           <CardDescription className="text-xs sm:text-sm">{t("ipHistoryDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <UserIPHistoryTable email={email} />
+          <UserIPHistoryTable email={email} onSelectIP={setFocusedIP} selectedIP={focusedIP} />
         </CardContent>
       </Card>
 

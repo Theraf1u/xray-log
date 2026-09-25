@@ -29,9 +29,13 @@ function getFlagEmoji(countryCode: string): string {
 
 interface UserIPHistoryTableProps {
   email: string;
+  // Fires when a row is clicked — the user page wires this to
+  // UserLocationMap's focusIP so clicking an IP here flies the map to it.
+  onSelectIP?: (ip: string) => void;
+  selectedIP?: string | null;
 }
 
-export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
+export function UserIPHistoryTable({ email, onSelectIP, selectedIP }: UserIPHistoryTableProps) {
   const tc = useTranslations("common");
   // Shared with UserLocationMap — see useUserIPHistory for why this used
   // to be its own independent fetch of the same endpoint.
@@ -87,7 +91,12 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
         </TableHeader>
         <TableBody>
           {history.map((ip, index) => (
-            <HistoryRow key={`${ip.ip_address}-${index}`} ip={ip} />
+            <HistoryRow
+              key={`${ip.ip_address}-${index}`}
+              ip={ip}
+              onSelect={onSelectIP}
+              selected={selectedIP === ip.ip_address}
+            />
           ))}
         </TableBody>
       </Table>
@@ -101,12 +110,27 @@ export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
 // does that on purpose for space-constrained columns, which is wrong here)
 // and the Location cell, instead of each cell re-fetching or duplicating
 // IPInfoBadge's own internal fetch.
-function HistoryRow({ ip }: { ip: UserIPHistory }) {
+function HistoryRow({
+  ip,
+  onSelect,
+  selected,
+}: {
+  ip: UserIPHistory;
+  onSelect?: (ip: string) => void;
+  selected?: boolean;
+}) {
   const { info, loading } = useIPInfo(ip.ip_address);
   const flag = info?.country_code ? getFlagEmoji(info.country_code) : "";
 
   return (
-    <TableRow>
+    <TableRow
+      onClick={onSelect ? () => onSelect(ip.ip_address) : undefined}
+      className={
+        onSelect
+          ? `cursor-pointer ${selected ? "bg-emerald-500/10 hover:bg-emerald-500/15" : "hover:bg-muted/50"}`
+          : undefined
+      }
+    >
       <TableCell>
         <span className="inline-flex items-center gap-1.5 font-mono text-sm">
           {flag && <span className="font-flag">{flag}</span>}

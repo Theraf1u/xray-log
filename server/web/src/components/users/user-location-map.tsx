@@ -82,6 +82,10 @@ function pointsFromHistory(history: UserIPHistory[]): LocationPoint[] {
 
 interface UserLocationMapProps {
   email: string;
+  // Set from the IP history table below — clicking a row there flies the
+  // map to that IP's point and highlights it, independent of the
+  // click-two-points distance flow (`selected`).
+  focusIP?: string | null;
 }
 
 // One marker per distinct location (IPs resolving to the same city/coords
@@ -89,15 +93,17 @@ interface UserLocationMapProps {
 // stack of identical ones). Click one marker, then another, to draw a line
 // between them and read the great-circle distance — click a third to start
 // a fresh pair.
-export function UserLocationMap({ email }: UserLocationMapProps) {
+export function UserLocationMap({ email, focusIP }: UserLocationMapProps) {
   const t = useTranslations("users");
   // Shared with UserIPHistoryTable — see useUserIPHistory for why this used
   // to be its own independent fetch of the same endpoint.
   const { history, loading: historyLoading } = useUserIPHistory(email);
   const mapRef = useRef<MapRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [points, setPoints] = useState<LocationPoint[] | null>(null);
   const [selected, setSelected] = useState<LocationPoint[]>([]);
   const [hovered, setHovered] = useState<LocationPoint | null>(null);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +149,29 @@ export function UserLocationMap({ email }: UserLocationMapProps) {
     return { longitude: avgLon, latitude: avgLat, zoom: points.length === 1 ? 6 : 3.5 };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [points?.length]);
+
+  // Fly to and highlight the point containing focusIP whenever it changes.
+  // Scrolled into view too, since the map sits above a long page and the
+  // click that set focusIP is usually much further down (the IP history
+  // table).
+  useEffect(() => {
+    if (!focusIP || !points) {
+      setFocusedKey(null);
+      return;
+    }
+    const point = points.find((p) => p.ips.includes(focusIP));
+    if (!point) {
+      setFocusedKey(null);
+      return;
+    }
+    setFocusedKey(point.key);
+    containerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    mapRef.current?.flyTo({
+      center: [point.longitude, point.latitude],
+      zoom: Math.max(mapRef.current.getZoom(), 9),
+      duration: 1000,
+    });
+  }, [focusIP, points]);
 
   const pickPoint = (p: LocationPoint) => {
     setSelected(
@@ -198,7 +227,7 @@ export function UserLocationMap({ email }: UserLocationMapProps) {
             <p className="text-sm">{t("locationMapEmpty")}</p>
           </div>
         ) : (
-          <div className="relative h-[360px] overflow-hidden rounded-[var(--radius)]">
+          <div ref={containerRef} className="relative h-[360px] overflow-hidden rounded-[var(--radius)]">
             <MapboxMap
               ref={mapRef}
               mapboxAccessToken={MAPBOX_TOKEN}
@@ -215,6 +244,7 @@ export function UserLocationMap({ email }: UserLocationMapProps) {
 
               {points.map((p) => {
                 const isSelected = selected.some((s) => s.key === p.key);
+                const isFocused = focusedKey === p.key;
                 return (
                   <Marker
                     key={p.key}
@@ -229,12 +259,19 @@ export function UserLocationMap({ email }: UserLocationMapProps) {
                       type="button"
                       onMouseEnter={() => setHovered(p)}
                       onMouseLeave={() => setHovered(null)}
-                      className="flex items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
+                      className={`flex items-center justify-center rounded-full border-2 transition-transform hover:scale-110 ${
+                        isFocused ? "animate-pulse" : ""
+                      }`}
                       style={{
-                        width: isSelected ? 18 : 14,
-                        height: isSelected ? 18 : 14,
-                        background: isSelected ? "rgba(245, 158, 11, 0.9)" : "rgba(59, 130, 246, 0.75)",
-                        borderColor: "rgba(255,255,255,0.85)",
+                        width: isFocused ? 22 : isSelected ? 18 : 14,
+                        height: isFocused ? 22 : isSelected ? 18 : 14,
+                        background: isFocused
+                          ? "rgba(52, 211, 153, 0.95)"
+                          : isSelected
+                            ? "rgba(245, 158, 11, 0.9)"
+                            : "rgba(59, 130, 246, 0.75)",
+                        borderColor: isFocused ? "rgba(52, 211, 153, 1)" : "rgba(255,255,255,0.85)",
+                        boxShadow: isFocused ? "0 0 0 4px rgba(52, 211, 153, 0.35)" : undefined,
                         cursor: "pointer",
                       }}
                     />
