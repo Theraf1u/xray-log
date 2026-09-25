@@ -174,6 +174,10 @@ export function UserLocationMap({ email, focusIP }: UserLocationMapProps) {
   }, [focusIP, points]);
 
   const pickPoint = (p: LocationPoint) => {
+    // A direct map click starts a fresh distance-measurement interaction —
+    // any leftover highlight from a table row click no longer applies and
+    // would otherwise sit there pulsing indefinitely.
+    setFocusedKey(null);
     setSelected(
       selected.length === 0
         ? [p]
