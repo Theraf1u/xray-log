@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -21,20 +22,57 @@ import (
 // Ensure remnawave is used (for type reference in enrichAbusersWithHWID)
 var _ *remnawave.User
 
+// resolveConcurrentlyMaxWorkers bounds how many Remnawave username lookups
+// run at once. High enough that a batch of ~500 (the dashboard's top-users
+// list) drains in a handful of rounds even when every one of them is a
+// cache miss; low enough not to hammer Remnawave with hundreds of
+// simultaneous requests.
+const resolveConcurrentlyMaxWorkers = 32
+
+// resolveConcurrently runs fn(item) for every item with bounded concurrency
+// and waits for all of them. Each individual Remnawave lookup is already
+// capped at 2s (IDCache.fetchAndCache), but that cap only bounds *one*
+// call — resolving a list one item at a time still serializes those caps,
+// so a batch of misses (e.g. right after a restart, or while Remnawave is
+// degraded) could block for minutes. That serial loop ran inside the
+// single-threaded WebSocket broadcast goroutine that pushes updates to
+// every connected dashboard, so a slow batch didn't just delay one
+// request — it stalled every client's live data until it finished, and
+// each subsequent broadcast tick queued up behind the last, making things
+// look progressively slower the longer the server had been running.
+// Fanning the batch out concurrently bounds total wall time to roughly one
+// 2s cap (plus scheduling overhead) regardless of how many items miss.
+func resolveConcurrently[T any](items []T, fn func(T)) {
+	sem := make(chan struct{}, resolveConcurrentlyMaxWorkers)
+	var wg sync.WaitGroup
+	for _, item := range items {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(it T) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			fn(it)
+		}(item)
+	}
+	wg.Wait()
+}
+
 // resolveUserDisplayNames resolves numeric IDs to usernames via Remnawave API
 func (s *Server) resolveUserDisplayNames(ctx context.Context, users []*models.UserStats) {
-	for _, u := range users {
-		// If display_name is empty or same as user_email (not resolved), try to resolve
-		if u.DisplayName == "" || u.DisplayName == u.UserEmail {
-			if s.remnawave != nil {
-				resolved := s.remnawave.ResolveUsername(ctx, u.UserEmail)
-				u.DisplayName = resolved
-			} else {
-				// Fallback to user_email if remnawave not configured
+	if s.remnawave == nil {
+		for _, u := range users {
+			if u.DisplayName == "" {
 				u.DisplayName = u.UserEmail
 			}
 		}
+		return
 	}
+	resolveConcurrently(users, func(u *models.UserStats) {
+		// If display_name is empty or same as user_email (not resolved), try to resolve
+		if u.DisplayName == "" || u.DisplayName == u.UserEmail {
+			u.DisplayName = s.remnawave.ResolveUsername(ctx, u.UserEmail)
+		}
+	})
 }
 
 // resolveCategoryUserStats resolves numeric IDs to usernames in CategoryUserStats
@@ -42,11 +80,11 @@ func (s *Server) resolveCategoryUserStats(ctx context.Context, stats []*threatin
 	if s.remnawave == nil {
 		return
 	}
-	for _, stat := range stats {
+	resolveConcurrently(stats, func(stat *threatintel.CategoryUserStats) {
 		if stat.DisplayName == "" || stat.DisplayName == stat.UserEmail {
 			stat.DisplayName = s.remnawave.ResolveUsername(ctx, stat.UserEmail)
 		}
-	}
+	})
 }
 
 // resolveCategoryTopUsers resolves usernames for all categories in map
@@ -61,11 +99,11 @@ func (s *Server) resolveThreatMatches(ctx context.Context, matches []*threatinte
 	if s.remnawave == nil {
 		return
 	}
-	for _, m := range matches {
+	resolveConcurrently(matches, func(m *threatintel.ThreatMatch) {
 		if m.DisplayName == "" || m.DisplayName == m.UserEmail {
 			m.DisplayName = s.remnawave.ResolveUsername(ctx, m.UserEmail)
 		}
-	}
+	})
 }
 
 // resolveBlacklistMatches resolves numeric IDs to usernames in BlacklistMatchInfo
@@ -73,11 +111,15 @@ func (s *Server) resolveBlacklistMatches(ctx context.Context, matches []models.B
 	if s.remnawave == nil {
 		return
 	}
+	ptrs := make([]*models.BlacklistMatchInfo, len(matches))
 	for i := range matches {
-		if matches[i].DisplayName == "" || matches[i].DisplayName == matches[i].UserEmail {
-			matches[i].DisplayName = s.remnawave.ResolveUsername(ctx, matches[i].UserEmail)
-		}
+		ptrs[i] = &matches[i]
 	}
+	resolveConcurrently(ptrs, func(m *models.BlacklistMatchInfo) {
+		if m.DisplayName == "" || m.DisplayName == m.UserEmail {
+			m.DisplayName = s.remnawave.ResolveUsername(ctx, m.UserEmail)
+		}
+	})
 }
 
 // handleStats returns overall statistics

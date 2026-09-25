@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { authFetch } from "@/contexts/auth-context";
+import { useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -17,6 +16,7 @@ import { formatDistanceToNowRu } from "@/lib/utils/date";
 import { UserIPHistory } from "@/lib/types";
 import { isValidDate } from "@/lib/utils/date";
 import { useIPInfo, prefetchIPInfoBatch } from "@/components/ui/ip-info-badge";
+import { useUserIPHistory } from "@/hooks/use-user-ip-history";
 import { useTranslations } from "next-intl";
 
 // Country flag emoji from country code
@@ -33,31 +33,17 @@ interface UserIPHistoryTableProps {
 
 export function UserIPHistoryTable({ email }: UserIPHistoryTableProps) {
   const tc = useTranslations("common");
-  const [history, setHistory] = useState<UserIPHistory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Shared with UserLocationMap — see useUserIPHistory for why this used
+  // to be its own independent fetch of the same endpoint.
+  const { history, loading, error } = useUserIPHistory(email);
 
+  // One batched lookup for every IP on the page instead of each HistoryRow
+  // firing its own slow single-IP request in sequence.
   useEffect(() => {
-    async function fetchHistory() {
-      try {
-        setLoading(true);
-        const res = await authFetch(`/api/users/${encodeURIComponent(email)}/ip-history`);
-        if (!res.ok) throw new Error("Failed to fetch IP history");
-        const data = await res.json();
-        setHistory(data || []);
-        // One batched lookup for every IP on the page instead of each
-        // HistoryRow firing its own slow single-IP request in sequence.
-        if (data && data.length > 0) {
-          prefetchIPInfoBatch(data.map((ip: UserIPHistory) => ip.ip_address));
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : tc("unknown"));
-      } finally {
-        setLoading(false);
-      }
+    if (history.length > 0) {
+      prefetchIPInfoBatch(history.map((ip) => ip.ip_address));
     }
-    fetchHistory();
-  }, [email]);
+  }, [history]);
 
   if (loading) {
     return (

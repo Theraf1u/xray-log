@@ -7,7 +7,7 @@ import type { MapRef } from "react-map-gl/mapbox";
 import type { LayerProps } from "react-map-gl/mapbox";
 import type { Feature, LineString } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { authFetch } from "@/contexts/auth-context";
+import { useUserIPHistory } from "@/hooks/use-user-ip-history";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MapPin, Ruler, X } from "lucide-react";
@@ -91,6 +91,9 @@ interface UserLocationMapProps {
 // a fresh pair.
 export function UserLocationMap({ email }: UserLocationMapProps) {
   const t = useTranslations("users");
+  // Shared with UserIPHistoryTable — see useUserIPHistory for why this used
+  // to be its own independent fetch of the same endpoint.
+  const { history, loading: historyLoading } = useUserIPHistory(email);
   const mapRef = useRef<MapRef>(null);
   const [points, setPoints] = useState<LocationPoint[] | null>(null);
   const [selected, setSelected] = useState<LocationPoint[]>([]);
@@ -98,28 +101,23 @@ export function UserLocationMap({ email }: UserLocationMapProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setPoints(null);
     setSelected([]);
+    if (historyLoading) {
+      setPoints(null);
+      return;
+    }
     async function run() {
-      try {
-        const res = await authFetch(`/api/users/${encodeURIComponent(email)}/ip-history`);
-        if (!res.ok) throw new Error("failed");
-        const data: UserIPHistory[] = (await res.json()) || [];
-        if (cancelled) return;
-        if (data.length > 0) {
-          await prefetchIPInfoBatch(data.map((ip) => ip.ip_address));
-        }
-        if (cancelled) return;
-        setPoints(pointsFromHistory(data));
-      } catch {
-        if (!cancelled) setPoints([]);
+      if (history.length > 0) {
+        await prefetchIPInfoBatch(history.map((ip) => ip.ip_address));
       }
+      if (cancelled) return;
+      setPoints(pointsFromHistory(history));
     }
     run();
     return () => {
       cancelled = true;
     };
-  }, [email]);
+  }, [email, history, historyLoading]);
 
   const lineFeature: Feature<LineString> | null = useMemo(() => {
     if (selected.length !== 2) return null;
