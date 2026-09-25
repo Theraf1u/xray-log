@@ -306,6 +306,37 @@ func (s *Server) handleDashboardWebSocket(w http.ResponseWriter, r *http.Request
 		return nil
 	})
 
+	// The read deadline above only gets pushed forward by a pong — and
+	// nothing here was ever sending the ping that pong replies to,
+	// server-side or client-side. So every dashboard tab's connection was
+	// silently timing out and reconnecting on a ~60s cycle (visible in the
+	// browser as repeated "[WS] Disconnected: 1006" / "Reconnecting" —
+	// harmless per reconnect, but choppy, and briefly drops any pending
+	// live update). A standard native ping keeps it alive: the browser's
+	// WebSocket implementation answers a control-frame ping automatically
+	// with a pong, no client-side code needed.
+	pingTicker := time.NewTicker(30 * time.Second)
+	pingDone := make(chan struct{})
+	defer func() {
+		pingTicker.Stop()
+		close(pingDone)
+	}()
+	go func() {
+		for {
+			select {
+			case <-pingDone:
+				return
+			case <-pingTicker.C:
+				client.mu.Lock()
+				err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second))
+				client.mu.Unlock()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		_, _, err := conn.ReadMessage()
 		if err != nil {
