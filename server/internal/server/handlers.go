@@ -668,11 +668,11 @@ func (s *Server) handleSubscriptionAbuse(w http.ResponseWriter, r *http.Request)
 
 	// Resolve usernames via Remnawave API for users not found in cache
 	if s.remnawave != nil {
-		for _, abuser := range abusers {
+		resolveConcurrently(abusers, func(abuser *models.SubscriptionAbuse) {
 			if abuser.Username == "" {
 				abuser.Username = s.remnawave.ResolveUsername(ctx, abuser.UserEmail)
 			}
-		}
+		})
 	}
 
 	// Calculate abuse score for each user
@@ -997,13 +997,15 @@ func (s *Server) handleThreatIntelMatches(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Resolve usernames via Remnawave API
+	// Resolve usernames via Remnawave API — same reasoning as
+	// resolveThreatMatches: sequential resolution of up to 500 items each
+	// capped at 2s can still sum to minutes, so fan it out.
 	if s.remnawave != nil && matches != nil {
-		for _, m := range matches {
+		resolveConcurrently(matches, func(m *threatintel.ThreatMatch) {
 			if m.DisplayName == "" || m.DisplayName == m.UserEmail {
 				m.DisplayName = s.remnawave.ResolveUsername(ctx, m.UserEmail)
 			}
-		}
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1918,13 +1920,20 @@ func (s *Server) handleAttackAnomalies(w http.ResponseWriter, r *http.Request) {
 		*threatintel.Anomaly
 		Username string `json:"username,omitempty"`
 	}
-	out := make([]enriched, 0, len(anomalies))
-	for _, a := range anomalies {
-		username := ""
-		if s.remnawave != nil && a.UserEmail != "" {
-			username = s.remnawave.ResolveUsername(r.Context(), a.UserEmail)
+	out := make([]enriched, len(anomalies))
+	for i, a := range anomalies {
+		out[i] = enriched{Anomaly: a}
+	}
+	if s.remnawave != nil {
+		outPtrs := make([]*enriched, len(out))
+		for i := range out {
+			outPtrs[i] = &out[i]
 		}
-		out = append(out, enriched{Anomaly: a, Username: username})
+		resolveConcurrently(outPtrs, func(e *enriched) {
+			if e.UserEmail != "" {
+				e.Username = s.remnawave.ResolveUsername(r.Context(), e.UserEmail)
+			}
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

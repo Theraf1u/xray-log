@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,49 +52,50 @@ func (s *Storage) GetBlacklistAnalytics(ctx context.Context, since time.Time) (*
 		RecentMatches: []models.BlacklistMatchInfo{},
 		HourlyStats:   []models.HourlyBlacklistStats{},
 	}
+	sinceUTC := since.UTC()
 
-	// Total hits in period
-	err := s.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > $1
-	`, since.UTC()).Scan(&analytics.TotalHits)
-	if err != nil {
-		return nil, fmt.Errorf("count total hits: %w", err)
+	// These 7 queries are independent reads over the same table, each
+	// writing its own disjoint field(s) of analytics — safe to run
+	// concurrently, and this endpoint (blacklist page + dashboard) was
+	// measured taking ~5.8s uncached running them one at a time.
+	var wg sync.WaitGroup
+	errCh := make(chan error, 7)
+	run := func(fn func() error) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := fn(); err != nil {
+				errCh <- err
+			}
+		}()
 	}
 
-	// Unique users
-	err = s.pool.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > $1
-	`, since.UTC()).Scan(&analytics.UniqueUsers)
-	if err != nil {
-		return nil, fmt.Errorf("count unique users: %w", err)
-	}
+	run(func() error {
+		return s.pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM blacklist_matches WHERE timestamp > $1
+		`, sinceUTC).Scan(&analytics.TotalHits)
+	})
+	run(func() error {
+		return s.pool.QueryRow(ctx, `
+			SELECT COUNT(DISTINCT user_email) FROM blacklist_matches WHERE timestamp > $1
+		`, sinceUTC).Scan(&analytics.UniqueUsers)
+	})
+	run(func() error {
+		return s.pool.QueryRow(ctx, `
+			SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > $1
+		`, sinceUTC).Scan(&analytics.UniqueDomains)
+	})
+	run(func() error { return s.loadTopDomains(ctx, sinceUTC, analytics) })
+	run(func() error { return s.loadTopUsers(ctx, sinceUTC, analytics) })
+	run(func() error { return s.loadRecentMatches(ctx, sinceUTC, analytics) })
+	run(func() error { return s.loadHourlyBlacklistStats(ctx, sinceUTC, analytics) })
 
-	// Unique domains
-	err = s.pool.QueryRow(ctx, `
-		SELECT COUNT(DISTINCT destination) FROM blacklist_matches WHERE timestamp > $1
-	`, since.UTC()).Scan(&analytics.UniqueDomains)
-	if err != nil {
-		return nil, fmt.Errorf("count unique domains: %w", err)
-	}
-
-	// Top domains
-	if err := s.loadTopDomains(ctx, since.UTC(), analytics); err != nil {
-		return nil, err
-	}
-
-	// Top users
-	if err := s.loadTopUsers(ctx, since.UTC(), analytics); err != nil {
-		return nil, err
-	}
-
-	// Recent matches
-	if err := s.loadRecentMatches(ctx, since.UTC(), analytics); err != nil {
-		return nil, err
-	}
-
-	// Hourly stats
-	if err := s.loadHourlyBlacklistStats(ctx, since.UTC(), analytics); err != nil {
-		return nil, err
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.cache.Set(cacheKey, analytics, CacheTTLMedium)
