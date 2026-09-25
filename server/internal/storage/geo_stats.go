@@ -4,11 +4,25 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/xray-log-analyzer/server/internal/threatintel"
 )
 
-// SaveGeoStats updates geographic statistics for a threat match
+// SaveGeoStats updates geographic statistics for a threat match. The
+// match_count/last_match bump is fast and synchronous; unique_users needs a
+// correlated DISTINCT-count subquery that used to run inside the same
+// UPSERT, holding the row lock on this (country_code, threat_type) row for
+// as long as that subquery took — measured well over a second under load in
+// production. Because there are only a couple dozen distinct
+// country/threat-type rows total while threat matches fire constantly
+// across the whole userbase, concurrent writers for the same hot row piled
+// up waiting on that lock, which backed up the whole connection pool and
+// dragged down unrelated endpoints (including /health, seen timing out
+// entirely). The expensive recompute now runs out-of-band, throttled per
+// row so a burst of matches for the same country/type doesn't just move the
+// same pile-up into the background.
 func (s *Storage) SaveGeoStats(ctx context.Context, countryCode, countryName, threatType, userEmail string) error {
 	if countryCode == "" {
 		return nil
@@ -19,15 +33,32 @@ func (s *Storage) SaveGeoStats(ctx context.Context, countryCode, countryName, th
 		VALUES ($1, $2, $3, 1, 1, NOW())
 		ON CONFLICT (country_code, threat_type) DO UPDATE SET
 			match_count = threat_geo_stats.match_count + 1,
-			unique_users = (
-				SELECT COUNT(DISTINCT user_email) FROM threat_matches
-				WHERE threat_type = $4
-				AND source_ip IN (SELECT DISTINCT source_ip FROM user_locations WHERE country_code = $5)
-			),
 			last_match = NOW()
-	`, countryCode, countryName, threatType, threatType, countryCode)
+	`, countryCode, countryName, threatType)
+	if err != nil {
+		return err
+	}
 
-	return err
+	throttleKey := "geo_unique_refresh_" + countryCode + "_" + threatType
+	if _, recent := s.cache.Get(throttleKey); !recent {
+		s.cache.Set(throttleKey, true, 5*time.Second)
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if _, err := s.db.ExecContext(bgCtx, `
+				UPDATE threat_geo_stats SET unique_users = (
+					SELECT COUNT(DISTINCT user_email) FROM threat_matches
+					WHERE threat_type = $1
+					AND source_ip IN (SELECT DISTINCT source_ip FROM user_locations WHERE country_code = $2)
+				)
+				WHERE country_code = $2 AND threat_type = $1
+			`, threatType, countryCode); err != nil {
+				log.Printf("storage: failed to refresh unique_users for geo stats %s/%s: %v", countryCode, threatType, err)
+			}
+		}()
+	}
+
+	return nil
 }
 
 // SaveUserLocation tracks user access from a specific location with coordinates
