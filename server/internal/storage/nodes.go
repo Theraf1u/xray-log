@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/xray-log-analyzer/server/internal/models"
@@ -109,19 +110,39 @@ func (s *Storage) UpdateNodeStats(ctx context.Context, nodeID string, requests i
 	return err
 }
 
-// UpdateNodeUniqueUsers updates unique users count for a node
+// UpdateNodeUniqueUsers updates unique users count for a node. Called on
+// every batch ProcessBatch handles — roughly every 5s per node across the
+// whole fleet — but there are only ~25 distinct node_stats rows, and the
+// COUNT DISTINCT subquery scans the full user_stats slice for that node
+// (thousands of rows on a busy node). Doing that synchronously on every
+// batch meant a lock held on the same handful of hot rows constantly,
+// exactly the same pile-up pattern as SaveGeoStats/threat_hourly_stats —
+// throttled out-of-band refresh instead.
 func (s *Storage) UpdateNodeUniqueUsers(ctx context.Context, nodeID string) error {
 	// user_stats.node_id is smallint FK; resolve text → id first.
 	nid, err := s.LookupNodeID(ctx, nodeID, "exit")
 	if err != nil {
 		return nil // node not registered yet — nothing to update
 	}
-	_, err = s.pool.Exec(ctx, `
-		UPDATE node_stats
-		SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = $1)
-		WHERE node_id = $2
-	`, int16(nid), nodeID)
-	return err
+
+	throttleKey := "node_unique_users_refresh_" + nodeID
+	if _, recent := s.cache.Get(throttleKey); recent {
+		return nil
+	}
+	s.cache.Set(throttleKey, true, 10*time.Second)
+
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := s.pool.Exec(bgCtx, `
+			UPDATE node_stats
+			SET unique_users = (SELECT COUNT(DISTINCT user_email) FROM user_stats WHERE node_id = $1)
+			WHERE node_id = $2
+		`, int16(nid), nodeID); err != nil {
+			log.Printf("storage: failed to refresh unique_users for node %s: %v", nodeID, err)
+		}
+	}()
+	return nil
 }
 
 // GetNodeStats gets statistics for all nodes (cached)

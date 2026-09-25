@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -102,14 +103,19 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 		ON CONFLICT DO NOTHING
 	`, hourKey, string(match.ThreatType), userUUID)
 
-	// Update hourly stats - recalculate unique_users from actual data
+	// Bump match_count synchronously (cheap); unique_users is recomputed
+	// out-of-band below — see the SaveGeoStats comment for why a correlated
+	// COUNT subquery inside this UPDATE is dangerous: there are only ~9
+	// threat types, so within any given hour this is at most ~9 distinct
+	// rows contended by every single match across the whole userbase. This
+	// table saw exactly the same lock pile-up as threat_geo_stats.
 	s.pool.Exec(ctx, `
 		INSERT INTO threat_hourly_stats (hour, threat_type, match_count, unique_users)
-		VALUES ($1, $2, 1, 1)
+		VALUES ($1, $2, 1, 0)
 		ON CONFLICT (hour, threat_type) DO UPDATE SET
-			match_count = threat_hourly_stats.match_count + 1,
-			unique_users = (SELECT COUNT(*) FROM threat_hourly_users WHERE hour = $3 AND threat_type = $4)
-	`, hourKey, string(match.ThreatType), hourKey, string(match.ThreatType))
+			match_count = threat_hourly_stats.match_count + 1
+	`, hourKey, string(match.ThreatType))
+	s.refreshThreatPeriodUniqueUsers(ctx, "hourly", hourKey, string(match.ThreatType))
 
 	// Track unique users per day/threat_type
 	s.pool.Exec(ctx, `
@@ -118,14 +124,15 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 		ON CONFLICT DO NOTHING
 	`, dayKey, string(match.ThreatType), userUUID)
 
-	// Update daily stats - recalculate unique_users from actual data
+	// Same fix as hourly above — at most ~9 distinct rows per day, contended
+	// by every match all day long.
 	s.pool.Exec(ctx, `
 		INSERT INTO threat_daily_stats (day, threat_type, match_count, unique_users)
-		VALUES ($1, $2, 1, 1)
+		VALUES ($1, $2, 1, 0)
 		ON CONFLICT (day, threat_type) DO UPDATE SET
-			match_count = threat_daily_stats.match_count + 1,
-			unique_users = (SELECT COUNT(*) FROM threat_daily_users WHERE day = $3 AND threat_type = $4)
-	`, dayKey, string(match.ThreatType), dayKey, string(match.ThreatType))
+			match_count = threat_daily_stats.match_count + 1
+	`, dayKey, string(match.ThreatType))
+	s.refreshThreatPeriodUniqueUsers(ctx, "daily", dayKey, string(match.ThreatType))
 
 	// Trim recent records: keep only the most recent MaxThreatMatchesPerUserCategory
 	// in the partition we just inserted into. Scoped to one (user_email, threat_type)
@@ -143,6 +150,42 @@ func (s *Storage) SaveThreatMatch(ctx context.Context, match *threatintel.Threat
 	`, userUUID, string(match.ThreatType), MaxThreatMatchesPerUserCategory)
 
 	return err
+}
+
+// refreshThreatPeriodUniqueUsers recomputes unique_users for one row of
+// threat_hourly_stats or threat_daily_stats out-of-band, throttled per
+// (period, key, threatType) via the shared cache so a burst of matches for
+// the same hour/day/type — the common case, since there are only ~9 threat
+// types total — doesn't turn into a burst of these background queries
+// either. period is "hourly" or "daily"; key is the hour/day bucket string
+// already used as the row's key.
+func (s *Storage) refreshThreatPeriodUniqueUsers(ctx context.Context, period, key, threatType string) {
+	throttleKey := "threat_period_refresh_" + period + "_" + key + "_" + threatType
+	if _, recent := s.cache.Get(throttleKey); recent {
+		return
+	}
+	s.cache.Set(throttleKey, true, 5*time.Second)
+
+	table, col := "threat_hourly_stats", "hour"
+	usersTable := "threat_hourly_users"
+	if period == "daily" {
+		table, col = "threat_daily_stats", "day"
+		usersTable = "threat_daily_users"
+	}
+
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		query := fmt.Sprintf(`
+			UPDATE %s SET unique_users = (
+				SELECT COUNT(*) FROM %s WHERE %s = $1 AND threat_type = $2
+			)
+			WHERE %s = $1 AND threat_type = $2
+		`, table, usersTable, col, col)
+		if _, err := s.pool.Exec(bgCtx, query, key, threatType); err != nil {
+			log.Printf("storage: failed to refresh %s unique_users for %s/%s: %v", period, key, threatType, err)
+		}
+	}()
 }
 
 // extractDomain extracts domain from destination (removes port)
