@@ -120,23 +120,29 @@ services:
       POSTGRES_USER: xray_analyzer
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
     volumes:
-      # Moved off /mnt/storage (slow shared HDD, was saturated at 97-99%
-      # util causing WALWrite/WalSync stalls) onto the local SSD.
-      - /mnt/ssd/xray-analyzer/postgres:/var/lib/postgresql/data
+      # Back on /mnt/storage (the disk the rest of this host's tooling/
+      # metrics already assumes for this data). It's a mechanical HDD, so
+      # the WAL settings below trade a small, acceptable durability window
+      # (this is log/analytics data, not financial) for far fewer fsyncs:
+      # that's what was actually saturating this disk, not raw volume.
+      - /mnt/storage/xray-analyzer/postgres:/var/lib/postgresql/data
     command: >
       postgres
-      -c shared_buffers=2GB
+      -c shared_buffers=6GB
       -c work_mem=16MB
       -c maintenance_work_mem=512MB
-      -c effective_cache_size=6GB
-      -c random_page_cost=1.1
-      -c max_wal_size=4GB
-      -c checkpoint_timeout=15min
+      -c effective_cache_size=12GB
+      -c random_page_cost=4
+      -c max_wal_size=8GB
+      -c checkpoint_timeout=30min
       -c checkpoint_completion_target=0.9
       -c autovacuum_vacuum_scale_factor=0.05
       -c autovacuum_naptime=30s
       -c max_connections=100
       -c shared_preload_libraries=pg_stat_statements
+      -c synchronous_commit=off
+      -c wal_writer_delay=200ms
+      -c wal_compression=on
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "xray_analyzer"]
       interval: 10s
