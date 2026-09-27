@@ -83,6 +83,14 @@ export function Header() {
   const diskPercentColor = (pct: number) =>
     pct >= 90 ? "text-red-500" : pct >= 70 ? "text-yellow-500" : "text-green-500";
 
+  // Our own footprint (DB + WAL) as a share of space that's currently
+  // free — i.e. "how much of what's left would filling up look like",
+  // not a share of total disk capacity (that's disk_used_percent above).
+  const dbPercentOfFree = (s: NonNullable<typeof storage>) =>
+    s.disk_free_bytes > 0 ? (s.analyzer_bytes / s.disk_free_bytes) * 100 : 0;
+  const formatDbPercent = (pct: number) =>
+    pct.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   const navItems = [
     { href: "/dashboard", label: t("dashboard") },
     { href: "/nodes", label: t("nodes") },
@@ -142,7 +150,7 @@ export function Header() {
                 title={t("dbSizeTooltip")}
               >
                 <Database className="h-3.5 w-3.5" />
-                {formatBytes(storage.database_bytes, 1)}
+                {formatBytes(storage.database_bytes, 1)} · {formatDbPercent(dbPercentOfFree(storage))}%
               </span>
             )}
             {storage && (
@@ -195,7 +203,7 @@ export function Header() {
               </span>
               <span className="flex items-center gap-1">
                 <Database className="h-3.5 w-3.5" />
-                {formatBytes(storage.database_bytes, 1)}
+                {formatBytes(storage.database_bytes, 1)} · {formatDbPercent(dbPercentOfFree(storage))}%
               </span>
               <span className="flex items-center gap-1">
                 <HardDriveDownload className="h-3.5 w-3.5" />
@@ -301,7 +309,7 @@ export function Header() {
                 </span>
                 <span className="flex items-center gap-1">
                   <Database className="h-4 w-4" />
-                  {formatBytes(storage.database_bytes, 1)}
+                  {formatBytes(storage.database_bytes, 1)} · {formatDbPercent(dbPercentOfFree(storage))}%
                 </span>
                 <span className="flex items-center gap-1">
                   <HardDriveDownload className="h-4 w-4" />

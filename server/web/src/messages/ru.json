@@ -88,7 +88,7 @@
     "admin": "Админка",
     "diskUsedTooltip": "Диск занят на {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; WAL: {wal}; свободно: {free}",
     "diskUsedTooltipFull": "Диск занят на {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; хронология: {chronology}; WAL: {wal}; свободно: {free}; аптайм: {uptime}",
-    "dbSizeTooltip": "Размер базы данных PostgreSQL",
+    "dbSizeTooltip": "Размер базы данных PostgreSQL; % — доля от текущего свободного места на диске",
     "diskFreeTooltip": "Свободно места на диске",
     "uptimeTooltip": "Аптайм сервера",
     "onlineUsersTooltip": "Пользователей онлайн"

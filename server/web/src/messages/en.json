@@ -88,7 +88,7 @@
     "admin": "Admin",
     "diskUsedTooltip": "Disk used: {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; WAL: {wal}; free: {free}",
     "diskUsedTooltipFull": "Disk used: {percent}%. Analyzer: {analyzer}; PostgreSQL: {db}; chronology: {chronology}; WAL: {wal}; free: {free}; uptime: {uptime}",
-    "dbSizeTooltip": "PostgreSQL database size",
+    "dbSizeTooltip": "PostgreSQL database size; % is its share of the disk's current free space",
     "diskFreeTooltip": "Free disk space",
     "uptimeTooltip": "Server uptime",
     "onlineUsersTooltip": "Users online"
