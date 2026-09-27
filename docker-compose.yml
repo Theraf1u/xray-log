@@ -120,7 +120,9 @@ services:
       POSTGRES_USER: xray_analyzer
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_env}
     volumes:
-      - /mnt/storage/xray-analyzer/postgres:/var/lib/postgresql/data
+      # Moved off /mnt/storage (slow shared HDD, was saturated at 97-99%
+      # util causing WALWrite/WalSync stalls) onto the local SSD.
+      - /mnt/ssd/xray-analyzer/postgres:/var/lib/postgresql/data
     command: >
       postgres
       -c shared_buffers=2GB
